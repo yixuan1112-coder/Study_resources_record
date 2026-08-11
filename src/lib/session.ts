@@ -1,0 +1,30 @@
+import "server-only";
+import { NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { GitHubError } from "./github";
+
+export type Actor = { token: string; owner: string };
+
+/** Resolves the signed-in GitHub identity, or null when unauthenticated. */
+export async function getActor(): Promise<Actor | null> {
+  const session = await auth();
+  if (!session?.accessToken || !session.login) return null;
+  return { token: session.accessToken, owner: session.login };
+}
+
+export function unauthorized() {
+  return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+}
+
+/** Maps thrown errors onto sensible HTTP responses for the API routes. */
+export function toErrorResponse(e: unknown) {
+  if (e instanceof GitHubError) {
+    const status = e.status === 401 || e.status === 403 ? e.status : 502;
+    return NextResponse.json(
+      { error: `GitHub: ${e.message}` },
+      { status: e.status === 404 ? 404 : status },
+    );
+  }
+  const message = e instanceof Error ? e.message : "Unexpected error";
+  return NextResponse.json({ error: message }, { status: 500 });
+}

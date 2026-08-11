@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --canvas: #f7f7f8;
+  --surface: #ffffff;
+  --raised: #f2f2f4;
+  --line: #e3e3e7;
+  --ink: #16161a;
+  --muted: #5c5c66;
+  --faint: #8b8b96;
+  --accent-rgb: 200 16 46; /* NTU red */
+  --accent: rgb(var(--accent-rgb));
+  --accent-soft: #fdeaed;
+  --danger-rgb: 185 28 28;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #0d0d10;
+    --surface: #151519;
+    --raised: #1d1d23;
+    --line: #2b2b33;
+    --ink: #ececf1;
+    --muted: #a0a0ad;
+    --faint: #71717f;
+    --accent-rgb: 255 84 112;
+    --accent-soft: #2a1218;
+    --danger-rgb: 248 113 113;
+  }
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2
+           text-sm font-medium transition-colors disabled:cursor-not-allowed
+           disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-white hover:opacity-90;
+  }
+  .btn-ghost {
+    @apply btn border border-line bg-surface text-ink hover:bg-raised;
+  }
+  .btn-quiet {
+    @apply btn text-muted hover:bg-raised hover:text-ink;
+  }
+  .field {
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm
+           text-ink outline-none placeholder:text-faint
+           focus:border-accent focus:ring-2 focus:ring-accent/20;
+  }
+  .card {
+    @apply rounded-xl border border-line bg-surface;
+  }
+}
+
+/* Rendered markdown */
+.prose-notes {
+  @apply text-[15px] leading-7 text-ink;
+}
+.prose-notes h1 {
+  @apply mb-3 mt-6 border-b border-line pb-2 text-2xl font-semibold first:mt-0;
+}
+.prose-notes h2 {
+  @apply mb-2 mt-6 text-xl font-semibold first:mt-0;
+}
+.prose-notes h3 {
+  @apply mb-2 mt-5 text-base font-semibold;
+}
+.prose-notes p {
+  @apply my-3;
+}
+.prose-notes ul {
+  @apply my-3 list-disc space-y-1 pl-6;
+}
+.prose-notes ol {
+  @apply my-3 list-decimal space-y-1 pl-6;
+}
+.prose-notes a {
+  @apply text-accent underline underline-offset-2;
+}
+.prose-notes code {
+  @apply rounded bg-raised px-1.5 py-0.5 font-mono text-[13px];
+}
+.prose-notes pre {
+  @apply my-4 overflow-x-auto rounded-lg border border-line bg-raised p-4;
+}
+.prose-notes pre code {
+  @apply bg-transparent p-0 text-[13px];
+}
+.prose-notes blockquote {
+  @apply my-4 border-l-4 border-line pl-4 text-muted;
+}
+.prose-notes table {
+  @apply my-4 w-full border-collapse text-sm;
+}
+.prose-notes th,
+.prose-notes td {
+  @apply border border-line px-3 py-2 text-left;
+}
+.prose-notes th {
+  @apply bg-raised font-semibold;
+}
+.prose-notes img {
+  @apply my-4 max-w-full rounded-lg border border-line;
+}
+.prose-notes hr {
+  @apply my-6 border-line;
+}
