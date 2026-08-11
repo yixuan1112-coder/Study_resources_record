@@ -1,9 +1,15 @@
 import Link from "next/link";
-import { Github, LogOut } from "lucide-react";
+import { Github, LogOut, Users } from "lucide-react";
 import { signOut } from "@/auth";
 import { VAULT_REPO } from "@/lib/github";
 
-export function AppHeader({ login }: { login: string }) {
+export function AppHeader({
+  login,
+  pendingInvites = 0,
+}: {
+  login: string;
+  pendingInvites?: number;
+}) {
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/85 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6">
@@ -13,6 +19,15 @@ export function AppHeader({ login }: { login: string }) {
         </Link>
 
         <div className="ml-auto flex items-center gap-1">
+          <Link href="/connections" className="btn-quiet relative">
+            <Users className="h-4 w-4" />
+            <span className="hidden sm:inline">Study group</span>
+            {pendingInvites > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-white">
+                {pendingInvites}
+              </span>
+            )}
+          </Link>
           <a
             href={`https://github.com/${login}/${VAULT_REPO}`}
             target="_blank"

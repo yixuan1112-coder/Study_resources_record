@@ -29,6 +29,9 @@ your-github-account/ntu-course-vault
   notes (GFM tables, code, task lists), images display directly.
 - **Rename, move, delete** — without leaving the page. Every change is an
   ordinary git commit, so nothing is ever silently lost.
+- **Share with coursemates** — invite someone by GitHub username and they can
+  read your whole vault and save copies of your notes into their own. See
+  [Sharing](#sharing).
 
 Because the storage is just a git repo, you can also clone it, edit notes in
 your own editor, and push — the app picks the changes up on the next load.
@@ -90,14 +93,56 @@ Open http://localhost:3000.
 Anyone you share the link with signs in with their own GitHub account and gets
 their own private vault — they never see your files, and you never see theirs.
 
+## Sharing
+
+Open **Study group** in the header and invite someone by GitHub username.
+
+Under the hood this adds them to your vault repo as a GitHub collaborator with
+`pull` permission — **read-only**. There is no app-level permission table:
+GitHub decides what each token can see, so the app cannot get it wrong.
+
+- They get a GitHub notification and accept it in the app (or on GitHub).
+- Once accepted, their courses appear under *Shared with you* on your dashboard,
+  and yours under theirs.
+- **They cannot change anything.** No uploads, renames or deletes on your vault.
+- They can hit **Save a copy** on any file to pull it into one of their own
+  courses. It becomes their file; later edits on either side are independent.
+- **Revoke any time** from Study group. Access stops immediately — though
+  anything they already copied stays in their vault, as with any real file.
+
+Copies are capped at 25 MB per file, since the bytes pass through the server.
+
+## Troubleshooting
+
+**"There is a problem with the server configuration"** — Auth.js could not start.
+The landing page now lists exactly which variables are missing. The usual causes:
+
+- One of `AUTH_SECRET`, `AUTH_GITHUB_ID`, `AUTH_GITHUB_SECRET` is not set.
+- They *are* set, but you added them after deploying. **Vercel does not apply
+  environment variables to an existing deployment** — go to Deployments, open
+  the latest, and use *Redeploy*.
+- The callback URL on the OAuth App does not match the site exactly.
+
+**GitHub says "redirect_uri is not associated with this application"** — the
+OAuth App's callback URL must be your origin plus
+`/api/auth/callback/github`, with `https`, no trailing slash.
+
+**A shared vault shows "No access"** — the invite has not been accepted yet, or
+it was revoked. Check Study group.
+
 ## How it works
 
 | Concern | Approach |
 | --- | --- |
 | Auth | Auth.js (NextAuth v5), GitHub OAuth with PKCE, JWT session cookie |
 | Storage | The GitHub Contents and Git Data APIs — no database |
-| Reads | Proxied through `/api/file`, because the vault repo is private |
+| Reads | Proxied through `/api/file`, because vault repos are private |
 | Multi-file upload | One blob per file, then a single tree + commit |
+| Sharing | GitHub repo collaborators at `pull` permission |
+
+Every write path targets the signed-in user's own vault. The `owner` parameter
+that selects whose vault to *read* is deliberately ignored by writes, so no
+request can be crafted to modify someone else's files.
 
 ### One deliberate trade-off
 

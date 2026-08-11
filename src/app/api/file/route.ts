@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ghRaw } from "@/lib/github";
-import { getActor, unauthorized } from "@/lib/session";
+import { getActor, resolveVault, unauthorized } from "@/lib/session";
 import { extOf, isSafeFilename, mimeOf, normalizeCode } from "@/lib/types";
 
 /**
@@ -15,11 +15,12 @@ export async function GET(req: NextRequest) {
   const name = req.nextUrl.searchParams.get("name") ?? "";
   const download = req.nextUrl.searchParams.get("download") === "1";
 
-  if (!code || !isSafeFilename(name)) {
+  const vault = resolveVault(actor, req.nextUrl.searchParams.get("owner"));
+  if (!code || !isSafeFilename(name) || !vault) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
 
-  const upstream = await ghRaw(actor.token, actor.owner, `courses/${code}/${name}`);
+  const upstream = await ghRaw(actor.token, vault.owner, `courses/${code}/${name}`);
   if (!upstream.ok || !upstream.body) {
     return NextResponse.json(
       { error: upstream.status === 404 ? "File not found" : "Could not read file" },

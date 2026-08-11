@@ -2,6 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { GitHubError } from "./github";
+import { isValidLogin } from "./sharing";
 
 export type Actor = { token: string; owner: string };
 
@@ -14,6 +15,22 @@ export async function getActor(): Promise<Actor | null> {
 
 export function unauthorized() {
   return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+}
+
+/**
+ * Which vault a read is aimed at. `owner` may be a friend who shared theirs;
+ * GitHub rejects the request if they have not, so no check is needed here.
+ * Writes must ignore this and use `actor.owner` — never a caller-supplied one.
+ */
+export function resolveVault(
+  actor: Actor,
+  requested: string | null | undefined,
+): { owner: string; readOnly: boolean } | null {
+  if (!requested || requested.toLowerCase() === actor.owner.toLowerCase()) {
+    return { owner: actor.owner, readOnly: false };
+  }
+  if (!isValidLogin(requested)) return null;
+  return { owner: requested, readOnly: true };
 }
 
 /** Maps thrown errors onto sensible HTTP responses for the API routes. */

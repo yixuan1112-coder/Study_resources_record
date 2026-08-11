@@ -1,10 +1,24 @@
 import { redirect } from "next/navigation";
-import { FileText, FolderTree, Github, Lock } from "lucide-react";
-import { auth, signIn } from "@/auth";
+import { AlertTriangle, FileText, FolderTree, Github, Lock, Users } from "lucide-react";
+import { auth, missingAuthEnv, signIn } from "@/auth";
 
-export default async function Home() {
+const ERROR_HINTS: Record<string, string> = {
+  Configuration:
+    "The server is missing its GitHub OAuth settings, or they do not match the OAuth App.",
+  AccessDenied: "You cancelled the GitHub authorisation, or it was refused.",
+  Verification: "That sign-in link has already been used or has expired.",
+};
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const session = await auth();
   if (session?.login) redirect("/dashboard");
+
+  const { error } = await searchParams;
+  const missing = missingAuthEnv();
 
   return (
     <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6 py-16">
@@ -22,6 +36,10 @@ export default async function Home() {
         time to revise.
       </p>
 
+      {(error || missing.length > 0) && (
+        <SetupHelp error={error} missing={missing} />
+      )}
+
       <form
         className="mt-8"
         action={async () => {
@@ -29,7 +47,11 @@ export default async function Home() {
           await signIn("github", { redirectTo: "/dashboard" });
         }}
       >
-        <button type="submit" className="btn-primary w-full py-2.5">
+        <button
+          type="submit"
+          disabled={missing.length > 0}
+          className="btn-primary w-full py-2.5"
+        >
           <Github className="h-4 w-4" />
           Continue with GitHub
         </button>
@@ -50,6 +72,10 @@ export default async function Home() {
           PDFs, markdown and images all preview in the browser. Rename or move
           anything without leaving the page.
         </Point>
+        <Point icon={<Users className="h-4 w-4" />}>
+          Share your vault with coursemates read-only, and save copies of their
+          notes into your own.
+        </Point>
       </ul>
 
       <p className="mt-10 text-xs leading-5 text-faint">
@@ -58,6 +84,59 @@ export default async function Home() {
         something.
       </p>
     </main>
+  );
+}
+
+/** Names the actual misconfiguration instead of "check the server logs". */
+function SetupHelp({
+  error,
+  missing,
+}: {
+  error?: string;
+  missing: string[];
+}) {
+  return (
+    <div className="card mt-8 border-danger/40 p-4">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
+        <div className="min-w-0 text-sm">
+          <p className="font-medium text-danger">Sign-in is not configured yet</p>
+          {error && (
+            <p className="mt-1 leading-6 text-muted">
+              {ERROR_HINTS[error] ?? `GitHub returned "${error}".`}
+            </p>
+          )}
+
+          {missing.length > 0 ? (
+            <>
+              <p className="mt-3 leading-6 text-muted">
+                These environment variables are not set on the server:
+              </p>
+              <ul className="mt-2 space-y-1">
+                {missing.map((name) => (
+                  <li key={name} className="font-mono text-[13px] text-ink">
+                    {name}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs leading-5 text-faint">
+                On Vercel: Project → Settings → Environment Variables. Adding
+                them does not affect the running deployment — you must redeploy
+                afterwards. Locally: put them in <code>.env.local</code> and
+                restart.
+              </p>
+            </>
+          ) : (
+            <p className="mt-3 text-xs leading-5 text-faint">
+              All three variables are set, so the likely cause is a mismatch:
+              the OAuth App&apos;s callback URL must be exactly this site&apos;s
+              origin followed by <code>/api/auth/callback/github</code>, and the
+              client secret must belong to that same OAuth App.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

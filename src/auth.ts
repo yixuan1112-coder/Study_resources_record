@@ -28,5 +28,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
   },
-  pages: { signIn: "/" },
+  // Send failures back to the landing page, which explains what is missing
+  // instead of Auth.js's bare "problem with the server configuration" screen.
+  pages: { signIn: "/", error: "/" },
 });
+
+/** Env vars without which sign-in cannot work. Used to render a setup hint. */
+export function missingAuthEnv(): string[] {
+  return (
+    [
+      ["AUTH_SECRET", process.env.AUTH_SECRET],
+      ["AUTH_GITHUB_ID", process.env.AUTH_GITHUB_ID ?? process.env.GITHUB_ID],
+      [
+        "AUTH_GITHUB_SECRET",
+        process.env.AUTH_GITHUB_SECRET ?? process.env.GITHUB_SECRET,
+      ],
+    ] as const
+  )
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+}

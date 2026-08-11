@@ -11,11 +11,12 @@ import {
   Loader2,
   Paperclip,
   Pencil,
+  Save,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
-import { FileViewer } from "./FileViewer";
+import { FileViewer, fileUrl } from "./FileViewer";
 import { MAX_FILE_BYTES, uploadFiles, type UploadProgress } from "@/lib/upload";
 import {
   colorForCode,
@@ -36,21 +37,31 @@ const FILTERS: { key: FileKind | "all"; label: string }[] = [
 export function CourseWorkspace({
   course,
   initialFiles,
+  owner,
+  myCourses = [],
 }: {
   course: Course;
   initialFiles: VaultFile[];
+  /** Set when viewing a vault someone shared — the page becomes read-only. */
+  owner?: string;
+  /** Destinations offered by "Save to my vault". */
+  myCourses?: Course[];
 }) {
+  const readOnly = !!owner;
   const [files, setFiles] = useState<VaultFile[]>(initialFiles);
   const [selected, setSelected] = useState<VaultFile | null>(null);
   const [filter, setFilter] = useState<FileKind | "all">("all");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const color = colorForCode(course.code);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/files?code=${encodeURIComponent(course.code)}`);
+    const q = new URLSearchParams({ code: course.code });
+    if (owner) q.set("owner", owner);
+    const res = await fetch(`/api/files?${q}`);
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       setError(body.error ?? "Could not list this course's files");
@@ -58,10 +69,11 @@ export function CourseWorkspace({
       return;
     }
     setFiles(body.files ?? []);
-  }, [course.code]);
+  }, [course.code, owner]);
 
   const handleUpload = useCallback(
     async (picked: FileList | File[] | null) => {
+      if (readOnly) return;
       const list = [...(picked ?? [])];
       if (list.length === 0) return;
       setError(null);
@@ -81,7 +93,7 @@ export function CourseWorkspace({
         if (inputRef.current) inputRef.current.value = "";
       }
     },
-    [course.code, files, load],
+    [course.code, files, load, readOnly],
   );
 
   const shown = useMemo(
@@ -99,6 +111,7 @@ export function CourseWorkspace({
     <main
       className="mx-auto max-w-6xl px-4 py-6 sm:px-6"
       onDragOver={(e) => {
+        if (readOnly) return;
         e.preventDefault();
         setDragging(true);
       }}
@@ -106,17 +119,18 @@ export function CourseWorkspace({
         if (e.currentTarget === e.target) setDragging(false);
       }}
       onDrop={(e) => {
+        if (readOnly) return;
         e.preventDefault();
         setDragging(false);
         void handleUpload(e.dataTransfer.files);
       }}
     >
       <Link
-        href="/dashboard"
+        href={owner ? `/u/${owner}` : "/dashboard"}
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink"
       >
         <ArrowLeft className="h-4 w-4" />
-        All courses
+        {owner ? `${owner}'s courses` : "All courses"}
       </Link>
 
       <div className="mb-6 flex flex-wrap items-end gap-4">
@@ -131,29 +145,36 @@ export function CourseWorkspace({
           </p>
         </div>
 
-        <div className="ml-auto">
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            hidden
-            onChange={(e) => void handleUpload(e.target.files)}
-          />
-          <button
-            className="btn-primary"
-            disabled={!!progress}
-            onClick={() => inputRef.current?.click()}
-          >
-            {progress ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="h-4 w-4" />
-            )}
-            {progress
-              ? `Uploading ${progress.done + 1}/${progress.total}`
-              : "Upload files"}
-          </button>
-        </div>
+        {readOnly ? (
+          <p className="ml-auto rounded-lg bg-raised px-3 py-1.5 text-xs text-muted">
+            Shared by <span className="font-medium text-ink">{owner}</span> ·
+            read only
+          </p>
+        ) : (
+          <div className="ml-auto">
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => void handleUpload(e.target.files)}
+            />
+            <button
+              className="btn-primary"
+              disabled={!!progress}
+              onClick={() => inputRef.current?.click()}
+            >
+              {progress ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
+              {progress
+                ? `Uploading ${progress.done + 1}/${progress.total}`
+                : "Upload files"}
+            </button>
+          </div>
+        )}
       </div>
 
       {progress && (
@@ -170,6 +191,15 @@ export function CourseWorkspace({
               style={{ width: `${(progress.done / progress.total) * 100}%` }}
             />
           </div>
+        </div>
+      )}
+
+      {notice && (
+        <div className="card mb-4 flex items-start gap-2 border-accent/40 p-3 text-sm">
+          <span className="flex-1">{notice}</span>
+          <button onClick={() => setNotice(null)} className="shrink-0 text-faint">
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
@@ -206,15 +236,24 @@ export function CourseWorkspace({
       <div className="grid gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
         <div className="card divide-y divide-line overflow-hidden">
           {shown.length === 0 ? (
-            <DropHint onPick={() => inputRef.current?.click()} />
+            readOnly ? (
+              <p className="px-6 py-14 text-center text-sm text-muted">
+                {owner} hasn&apos;t added anything to this course yet.
+              </p>
+            ) : (
+              <DropHint onPick={() => inputRef.current?.click()} />
+            )
           ) : (
             shown.map((file) => (
               <FileRow
                 key={file.path}
                 file={file}
                 code={course.code}
+                owner={owner}
+                myCourses={myCourses}
                 active={selected?.path === file.path}
                 onOpen={() => setSelected(file)}
+                onNotice={setNotice}
                 onChanged={async () => {
                   setSelected(null);
                   await load();
@@ -229,6 +268,7 @@ export function CourseWorkspace({
             <FileViewer
               code={course.code}
               file={selected}
+              owner={owner}
               onClose={() => setSelected(null)}
             />
           ) : (
@@ -242,7 +282,7 @@ export function CourseWorkspace({
         </div>
       </div>
 
-      {dragging && (
+      {dragging && !readOnly && (
         <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center bg-accent/5 backdrop-blur-sm">
           <div className="rounded-2xl border-2 border-dashed border-accent bg-surface px-8 py-6 text-center shadow-lg">
             <Upload className="mx-auto mb-2 h-6 w-6 text-accent" />
@@ -282,17 +322,25 @@ const ICONS: Record<FileKind, React.ReactNode> = {
 function FileRow({
   file,
   code,
+  owner,
+  myCourses,
   active,
   onOpen,
   onChanged,
+  onNotice,
 }: {
   file: VaultFile;
   code: string;
+  owner?: string;
+  myCourses: Course[];
   active: boolean;
   onOpen: () => void;
   onChanged: () => void;
+  onNotice: (msg: string) => void;
 }) {
+  const readOnly = !!owner;
   const [renaming, setRenaming] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [name, setName] = useState(file.name);
   const [busy, setBusy] = useState(false);
 
@@ -330,6 +378,23 @@ function FileRow({
     onChanged();
   }
 
+  async function saveToMyVault(toCode: string) {
+    setBusy(true);
+    const res = await fetch("/api/copy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fromOwner: owner, fromCode: code, name: file.name, toCode }),
+    });
+    const body = await res.json().catch(() => ({}));
+    setBusy(false);
+    setSaving(false);
+    if (!res.ok) {
+      alert(body.error ?? "Could not save that file");
+      return;
+    }
+    onNotice(`Saved ${body.name} into your ${toCode}.`);
+  }
+
   if (renaming) {
     return (
       <form onSubmit={rename} className="flex items-center gap-1.5 p-2">
@@ -361,6 +426,46 @@ function FileRow({
     );
   }
 
+  if (saving) {
+    return (
+      <div className="p-2.5">
+        <p className="mb-2 text-xs text-muted">
+          Save <span className="font-medium text-ink">{file.name}</span> into:
+        </p>
+        <div className="flex items-center gap-1.5">
+          <select
+            autoFocus
+            className="field py-1.5 text-[13px]"
+            defaultValue=""
+            disabled={busy}
+            onChange={(e) => e.target.value && void saveToMyVault(e.target.value)}
+          >
+            <option value="" disabled>
+              Choose one of your courses…
+            </option>
+            {myCourses.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code}
+                {c.title ? ` — ${c.title}` : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setSaving(false)}
+            disabled={busy}
+            className="btn-quiet px-2 py-1.5"
+          >
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <X className="h-4 w-4" />
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`group flex items-center gap-2.5 p-3 transition-colors ${
@@ -382,27 +487,42 @@ function FileRow({
 
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
         <a
-          href={`/api/file?code=${encodeURIComponent(code)}&name=${encodeURIComponent(file.name)}&download=1`}
+          href={fileUrl(code, file.name, { download: true, owner })}
           className="rounded p-1.5 text-faint hover:bg-surface hover:text-ink"
           title="Download"
         >
           <Download className="h-3.5 w-3.5" />
         </a>
-        <button
-          onClick={() => setRenaming(true)}
-          className="rounded p-1.5 text-faint hover:bg-surface hover:text-ink"
-          title="Rename"
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button
-          onClick={remove}
-          disabled={busy}
-          className="rounded p-1.5 text-faint hover:bg-surface hover:text-danger"
-          title="Delete"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+
+        {readOnly ? (
+          myCourses.length > 0 && (
+            <button
+              onClick={() => setSaving(true)}
+              className="rounded p-1.5 text-faint hover:bg-surface hover:text-accent"
+              title="Save a copy to my vault"
+            >
+              <Save className="h-3.5 w-3.5" />
+            </button>
+          )
+        ) : (
+          <>
+            <button
+              onClick={() => setRenaming(true)}
+              className="rounded p-1.5 text-faint hover:bg-surface hover:text-ink"
+              title="Rename"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={remove}
+              disabled={busy}
+              className="rounded p-1.5 text-faint hover:bg-surface hover:text-danger"
+              title="Delete"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

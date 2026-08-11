@@ -6,22 +6,30 @@ import remarkGfm from "remark-gfm";
 import { Download, ExternalLink, Loader2, X } from "lucide-react";
 import { formatBytes, type VaultFile } from "@/lib/types";
 
-function fileUrl(code: string, name: string, download = false) {
+/** `owner` is set only when reading a vault someone shared with me. */
+export function fileUrl(
+  code: string,
+  name: string,
+  opts: { download?: boolean; owner?: string } = {},
+) {
   const q = new URLSearchParams({ code, name });
-  if (download) q.set("download", "1");
+  if (opts.download) q.set("download", "1");
+  if (opts.owner) q.set("owner", opts.owner);
   return `/api/file?${q}`;
 }
 
 export function FileViewer({
   code,
   file,
+  owner,
   onClose,
 }: {
   code: string;
   file: VaultFile;
+  owner?: string;
   onClose: () => void;
 }) {
-  const src = fileUrl(code, file.name);
+  const src = fileUrl(code, file.name, { owner });
 
   return (
     <div className="flex h-full flex-col">
@@ -42,7 +50,7 @@ export function FileViewer({
           <ExternalLink className="h-4 w-4" />
         </a>
         <a
-          href={fileUrl(code, file.name, true)}
+          href={fileUrl(code, file.name, { download: true, owner })}
           className="rounded p-1.5 text-faint hover:bg-raised hover:text-ink"
           title="Download"
         >
@@ -66,7 +74,7 @@ export function FileViewer({
           />
         ) : file.kind === "image" ? (
           <div className="flex h-full items-center justify-center p-4">
-            {/* Proxied through our API because the vault repo is private. */}
+            {/* Proxied through our API because vault repos are private. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={src}
@@ -76,13 +84,14 @@ export function FileViewer({
           </div>
         ) : file.kind === "markdown" ? (
           // Keyed so switching notes remounts with fresh state.
-          <MarkdownView key={src} code={code} src={src} />
+          <MarkdownView key={src} code={code} src={src} owner={owner} />
         ) : (
           <div className="flex h-full min-h-[320px] flex-col items-center justify-center px-6 text-center">
-            <p className="text-sm text-muted">
-              No preview for this file type.
-            </p>
-            <a href={fileUrl(code, file.name, true)} className="btn-ghost mt-4">
+            <p className="text-sm text-muted">No preview for this file type.</p>
+            <a
+              href={fileUrl(code, file.name, { download: true, owner })}
+              className="btn-ghost mt-4"
+            >
               <Download className="h-4 w-4" />
               Download {file.name}
             </a>
@@ -93,7 +102,15 @@ export function FileViewer({
   );
 }
 
-function MarkdownView({ code, src }: { code: string; src: string }) {
+function MarkdownView({
+  code,
+  src,
+  owner,
+}: {
+  code: string;
+  src: string;
+  owner?: string;
+}) {
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -132,7 +149,7 @@ function MarkdownView({ code, src }: { code: string; src: string }) {
             const raw = typeof imgSrc === "string" ? imgSrc : "";
             const resolved = /^(https?:|data:)/.test(raw)
               ? raw
-              : fileUrl(code, raw.replace(/^\.?\//, ""));
+              : fileUrl(code, raw.replace(/^\.?\//, ""), { owner });
             // eslint-disable-next-line @next/next/no-img-element
             return <img src={resolved} alt={alt ?? ""} />;
           },

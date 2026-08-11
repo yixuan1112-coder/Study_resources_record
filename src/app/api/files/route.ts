@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteFile, listDir, movePath } from "@/lib/github";
-import { getActor, toErrorResponse, unauthorized } from "@/lib/session";
+import { getActor, resolveVault, toErrorResponse, unauthorized } from "@/lib/session";
 import { isSafeFilename, kindOf, normalizeCode, type VaultFile } from "@/lib/types";
 
-/** List every file in a course folder. */
+/** List every file in a course folder — mine, or a friend's shared vault. */
 export async function GET(req: NextRequest) {
   const actor = await getActor();
   if (!actor) return unauthorized();
 
   const code = normalizeCode(req.nextUrl.searchParams.get("code") ?? "");
-  if (!code) return NextResponse.json({ error: "Missing course" }, { status: 400 });
+  const vault = resolveVault(actor, req.nextUrl.searchParams.get("owner"));
+  if (!code || !vault) {
+    return NextResponse.json({ error: "Bad request" }, { status: 400 });
+  }
 
   try {
-    const entries = await listDir(actor.token, actor.owner, `courses/${code}`);
+    const entries = await listDir(actor.token, vault.owner, `courses/${code}`);
     const files: VaultFile[] = entries
       .filter((e) => e.type === "file" && e.name !== "README.md")
       .map((e) => ({

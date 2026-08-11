@@ -146,6 +146,20 @@ export async function writeFile(
   });
 }
 
+/** Write already-base64-encoded bytes (used when copying a shared file). */
+export async function writeBinaryFile(
+  token: string,
+  owner: string,
+  path: string,
+  base64: string,
+  message: string,
+): Promise<void> {
+  await gh(token, `/repos/${owner}/${VAULT_REPO}/contents/${encodePath(path)}`, {
+    method: "PUT",
+    body: JSON.stringify({ message, content: base64, branch: VAULT_BRANCH }),
+  });
+}
+
 export async function deleteFile(
   token: string,
   owner: string,
