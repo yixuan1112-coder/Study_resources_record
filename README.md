@@ -124,8 +124,23 @@ The landing page now lists exactly which variables are missing. The usual causes
 - The callback URL on the OAuth App does not match the site exactly.
 
 **GitHub says "redirect_uri is not associated with this application"** — the
-OAuth App's callback URL must be your origin plus
-`/api/auth/callback/github`, with `https`, no trailing slash.
+callback the app sent does not match the one registered on the OAuth App.
+
+Open `/api/health` on the deployed site **in the browser you sign in from**. It
+reports `callbackUrlToRegister`, computed from the host actually serving you —
+paste that value verbatim into the OAuth App's *Authorization callback URL*.
+
+The usual cause is arriving on the wrong hostname. A Vercel project answers on
+its stable domain *and* on a different per-deployment URL for every build, and
+the callback is built from whichever one you opened. Fix it permanently by
+setting `AUTH_URL` to the stable origin (no trailing slash):
+
+```
+AUTH_URL=https://your-app.vercel.app
+```
+
+With that set, the callback stays the same no matter which hostname you arrive
+on. Remember to redeploy after adding it.
 
 **A shared vault shows "No access"** — the invite has not been accepted yet, or
 it was revoked. Check Study group.
