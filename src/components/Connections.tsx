@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Check, Loader2, Mail, UserPlus, Users, X } from "lucide-react";
+import { GroupChat, type ChatRoom } from "./GroupChat";
 import type { IncomingInvite, Person, SentInvite } from "@/lib/sharing";
 
 export type ConnectionState = {
@@ -61,6 +62,16 @@ export function Connections({
     );
   };
 
+  // One chat room per group I am in: my own vault, plus every vault shared
+  // with me. `/{login}.png` is GitHub's public avatar redirect.
+  const rooms: ChatRoom[] = [
+    { owner: state.me, avatarUrl: `https://github.com/${state.me}.png?size=64` },
+    ...state.sharingWithMe.map((p) => ({
+      owner: p.login,
+      avatarUrl: p.avatarUrl,
+    })),
+  ];
+
   return (
     <div className="space-y-8">
       <div>
@@ -68,7 +79,8 @@ export function Connections({
         <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
           Share your vault with a coursemate and they can read everything in it
           — and save copies into their own. Access is read-only: nobody can
-          change or delete your files, and you can revoke it at any time.
+          change or delete your files, and you can revoke it at any time. Chat
+          below with everyone in a group.
         </p>
       </div>
 
@@ -157,6 +169,8 @@ export function Connections({
           ))}
         </Section>
       )}
+
+      <GroupChat me={state.me} rooms={rooms} />
 
       <Section
         icon={<Users className="h-4 w-4" />}

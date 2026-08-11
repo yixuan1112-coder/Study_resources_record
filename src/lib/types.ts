@@ -50,35 +50,56 @@ export function kindOf(name: string): FileKind {
   return "other";
 }
 
+/**
+ * Any file type can be uploaded, so this only has to name the ones a browser
+ * can do something useful with. Everything else falls through to a download.
+ */
+const MIME: Record<string, string> = {
+  pdf: "application/pdf",
+  md: "text/markdown; charset=utf-8",
+  markdown: "text/markdown; charset=utf-8",
+  mdx: "text/markdown; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+  csv: "text/csv; charset=utf-8",
+  json: "application/json; charset=utf-8",
+  html: "text/html; charset=utf-8",
+  css: "text/css; charset=utf-8",
+
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  svg: "image/svg+xml",
+  bmp: "image/bmp",
+  heic: "image/heic",
+  tif: "image/tiff",
+  tiff: "image/tiff",
+
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+
+  zip: "application/zip",
+  gz: "application/gzip",
+  "7z": "application/x-7z-compressed",
+  rar: "application/vnd.rar",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  epub: "application/epub+zip",
+};
+
 export function mimeOf(name: string): string {
-  const ext = extOf(name);
-  switch (ext) {
-    case "pdf":
-      return "application/pdf";
-    case "md":
-    case "markdown":
-    case "mdx":
-      return "text/markdown; charset=utf-8";
-    case "txt":
-      return "text/plain; charset=utf-8";
-    case "png":
-      return "image/png";
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "gif":
-      return "image/gif";
-    case "webp":
-      return "image/webp";
-    case "avif":
-      return "image/avif";
-    case "svg":
-      return "image/svg+xml";
-    case "bmp":
-      return "image/bmp";
-    default:
-      return "application/octet-stream";
-  }
+  return MIME[extOf(name)] ?? "application/octet-stream";
 }
 
 export function formatBytes(n: number): string {

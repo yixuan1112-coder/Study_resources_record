@@ -8,7 +8,7 @@ import { isSafeFilename, normalizeCode } from "@/lib/types";
  * upload from the browser this never crosses Vercel's request-body cap — the
  * only ceiling is how much the function can comfortably hold.
  */
-const MAX_COPY_BYTES = 25 * 1024 * 1024;
+const MAX_COPY_BYTES = 50 * 1024 * 1024;
 
 /** Copy a file out of a shared vault into one of my own courses. */
 export async function POST(req: NextRequest) {

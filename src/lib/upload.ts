@@ -1,6 +1,12 @@
 "use client";
 
-export const MAX_FILE_BYTES = 45 * 1024 * 1024; // GitHub's blob API tops out near 100 MB
+/**
+ * GitHub's blob API refuses anything at or above 100 MB, so this sits just
+ * under it. Every file type is allowed — the cap is the only restriction.
+ */
+export const MAX_FILE_BYTES = 95 * 1024 * 1024;
+
+const MAX_FILE_MB = Math.round(MAX_FILE_BYTES / 1024 / 1024);
 
 type UploadSession = {
   token: string;
@@ -85,7 +91,7 @@ export async function uploadFiles(
 
     if (file.size > MAX_FILE_BYTES) {
       throw new Error(
-        `${file.name} is ${(file.size / 1024 / 1024).toFixed(0)} MB — the limit is 45 MB`,
+        `${file.name} is ${(file.size / 1024 / 1024).toFixed(0)} MB — the limit is ${MAX_FILE_MB} MB`,
       );
     }
 

@@ -23,8 +23,8 @@ your-github-account/ntu-course-vault
 
 - **Course index** — add courses by code (CZ1003, MH1812…) with title, academic
   year, semester and AUs. Grouped by year/semester, searchable.
-- **Upload anything** — drag files anywhere onto a course page. Multiple files
-  land in a single commit.
+- **Upload anything** — drag files anywhere onto a course page. Any file type
+  is accepted, up to 95 MB each, and multiple files land in a single commit.
 - **Preview in the browser** — PDFs render inline, markdown renders as formatted
   notes (GFM tables, code, task lists), images display directly.
 - **Rename, move, delete** — without leaving the page. Every change is an
@@ -32,6 +32,8 @@ your-github-account/ntu-course-vault
 - **Share with coursemates** — invite someone by GitHub username and they can
   read your whole vault and save copies of your notes into their own. See
   [Sharing](#sharing).
+- **Group chat** — everyone in a study group can talk on the Study group page.
+  See [Chat](#chat).
 
 Because the storage is just a git repo, you can also clone it, edit notes in
 your own editor, and push — the app picks the changes up on the next load.
@@ -110,7 +112,24 @@ GitHub decides what each token can see, so the app cannot get it wrong.
 - **Revoke any time** from Study group. Access stops immediately — though
   anything they already copied stays in their vault, as with any real file.
 
-Copies are capped at 25 MB per file, since the bytes pass through the server.
+Copies are capped at 50 MB per file, since the bytes pass through the server —
+lower than the 95 MB upload cap, where the browser talks to GitHub directly.
+
+## Chat
+
+Each study group has a chat room on the **Study group** page. Your own group is
+everyone you share your vault with; every vault shared with you is another room,
+picked from the tabs above the messages.
+
+There is still no database. A room is one issue titled *Study group chat* in
+that vault's repository, and each message is a comment on it — so the people who
+can read the vault are exactly the people who can read and post in the chat, and
+GitHub keeps enforcing that. Nothing extra is granted: read-only access already
+allows commenting, and it still does not allow touching any file.
+
+The conversation is a normal GitHub thread, so it can be read and replied to on
+github.com as well; the app picks up those replies within a few seconds. Rooms
+are created the first time someone in the group opens the chat.
 
 ## Troubleshooting
 
@@ -154,10 +173,13 @@ it was revoked. Check Study group.
 | Reads | Proxied through `/api/file`, because vault repos are private |
 | Multi-file upload | One blob per file, then a single tree + commit |
 | Sharing | GitHub repo collaborators at `pull` permission |
+| Chat | One issue per vault; messages are its comments |
 
 Every write path targets the signed-in user's own vault. The `owner` parameter
 that selects whose vault to *read* is deliberately ignored by writes, so no
-request can be crafted to modify someone else's files.
+request can be crafted to modify someone else's files. Chat is the one
+exception, and deliberately so: posting into a friend's room is the whole point,
+and GitHub refuses the comment unless they have actually shared that vault.
 
 ### One deliberate trade-off
 
@@ -171,7 +193,10 @@ memory only, and never written to `localStorage`. This is the same approach
 GitHub-backed editors such as Decap CMS take. Everything else — listing,
 renaming, deleting, reading — stays server-side.
 
-Individual files are capped at 45 MB, below GitHub's blob API limit.
+Individual files are capped at 95 MB, just under the 100 MB ceiling GitHub's
+blob API enforces. There is no restriction on file *type* — PDFs, slides,
+archives, code, recordings and anything else are all accepted; the ones the
+browser understands get an inline preview, and the rest get a download button.
 
 ## Notes
 

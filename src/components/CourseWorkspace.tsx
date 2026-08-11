@@ -288,7 +288,7 @@ export function CourseWorkspace({
             <Upload className="mx-auto mb-2 h-6 w-6 text-accent" />
             <p className="font-medium">Drop into {course.code}</p>
             <p className="mt-1 text-xs text-muted">
-              PDFs, markdown and images · up to {formatBytes(MAX_FILE_BYTES)} each
+              Any file type · up to {formatBytes(MAX_FILE_BYTES)} each
             </p>
           </div>
         </div>
@@ -303,7 +303,7 @@ function DropHint({ onPick }: { onPick: () => void }) {
       <Paperclip className="mb-3 h-6 w-6 text-faint" />
       <p className="text-sm font-medium">Nothing here yet</p>
       <p className="mt-1 text-xs leading-5 text-muted">
-        Drag files anywhere on this page, or
+        Drag files of any type anywhere on this page, or
       </p>
       <button onClick={onPick} className="btn-ghost mt-3">
         Choose files
