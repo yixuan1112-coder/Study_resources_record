@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 
 /**
@@ -8,7 +8,15 @@ import { auth } from "@/auth";
  *
  * Deliberately reports presence and shape only — never a value.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Derived from the request actually being served, so it reflects the host the
+  // browser used — the value GitHub will compare against.
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const callbackUrlToRegister = host
+    ? `${proto}://${host}/api/auth/callback/github`
+    : null;
+
   const shape = (name: string) => {
     const value = process.env[name];
     if (value === undefined) return "unset";
@@ -29,6 +37,8 @@ export async function GET() {
 
   return NextResponse.json(
     {
+      // Paste this verbatim into the OAuth App's "Authorization callback URL".
+      callbackUrlToRegister,
       env: {
         AUTH_SECRET: shape("AUTH_SECRET"),
         AUTH_GITHUB_ID: shape("AUTH_GITHUB_ID"),
