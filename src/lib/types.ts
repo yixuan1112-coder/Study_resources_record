@@ -116,6 +116,25 @@ export function normalizeCode(raw: string): string {
     .replace(/[^A-Z0-9_-]/g, "");
 }
 
+/**
+ * Turn a note title into a filename stem. Non-ASCII is kept — course notes are
+ * often written in Chinese — so this strips only what a path cannot hold.
+ */
+export function slugifyTitle(raw: string): string {
+  const stem = raw
+    .normalize("NFC")
+    // Characters that are illegal or awkward in a path, plus control codes.
+    .replace(/[/\\:*?"<>|]/g, " ")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 80)
+    .replace(/^[.\-]+/, "")
+    .replace(/[.\-]+$/, "")
+    .toLowerCase();
+  return stem || "note";
+}
+
 /** Reject anything that could escape the course directory. */
 export function isSafeFilename(name: string): boolean {
   if (!name || name.length > 200) return false;

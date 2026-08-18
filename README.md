@@ -25,6 +25,10 @@ your-github-account/ntu-course-vault
   year, semester and AUs. Grouped by year/semester, searchable.
 - **Upload anything** — drag files anywhere onto a course page. Any file type
   is accepted, up to 95 MB each, and multiple files land in a single commit.
+- **Write a note** — type a summary straight into a course without uploading
+  anything. Hit **Write a note**, give it a title and a few words, and it is
+  saved as an ordinary `.md` file in that course. Edit it later from the pencil
+  on its row, or delete it exactly like any other file.
 - **Preview in the browser** — PDFs render inline, markdown renders as formatted
   notes (GFM tables, code, task lists), images display directly.
 - **Rename, move, delete** — without leaving the page. Every change is an
@@ -206,6 +210,11 @@ browser understands get an inline preview, and the rest get a download button.
   in the git history, recoverable with `git log --diff-filter=D`.
 - Images referenced from a note by bare filename (`![](diagram.png)`) resolve
   against that course's folder.
+- A note written in the app is just a file, so everything that works on files
+  works on it: rename, move to another course, delete, and — for coursemates you
+  have shared the vault with — read and **Save a copy**. The title becomes the
+  filename, so "Week 1 summary" is stored as `week-1-summary.md`; non-ASCII
+  titles are kept as they are. Notes are capped at 100 KB of text.
 
 ## Scripts
 

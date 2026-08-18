@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -9,6 +9,7 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
+  NotebookPen,
   Paperclip,
   Pencil,
   Save,
@@ -55,6 +56,8 @@ export function CourseWorkspace({
   const [notice, setNotice] = useState<string | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** null = closed. `{}` = writing a new note. `{ file }` = editing that note. */
+  const [composing, setComposing] = useState<{ file?: VaultFile } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const color = colorForCode(course.code);
 
@@ -151,7 +154,7 @@ export function CourseWorkspace({
             read only
           </p>
         ) : (
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             <input
               ref={inputRef}
               type="file"
@@ -159,6 +162,14 @@ export function CourseWorkspace({
               hidden
               onChange={(e) => void handleUpload(e.target.files)}
             />
+            <button
+              className="btn-ghost"
+              onClick={() => setComposing({})}
+              title="Write a summary without uploading a file"
+            >
+              <NotebookPen className="h-4 w-4" />
+              Write a note
+            </button>
             <button
               className="btn-primary"
               disabled={!!progress}
@@ -212,6 +223,20 @@ export function CourseWorkspace({
         </div>
       )}
 
+      {composing && !readOnly && (
+        <NoteComposer
+          code={course.code}
+          file={composing.file}
+          onCancel={() => setComposing(null)}
+          onSaved={async (msg) => {
+            setComposing(null);
+            setNotice(msg);
+            setSelected(null);
+            await load();
+          }}
+        />
+      )}
+
       <div className="mb-4 flex flex-wrap gap-1.5">
         {FILTERS.map((f) => {
           const n = f.key === "all" ? counts.all : (counts[f.key] ?? 0);
@@ -241,7 +266,10 @@ export function CourseWorkspace({
                 {owner} hasn&apos;t added anything to this course yet.
               </p>
             ) : (
-              <DropHint onPick={() => inputRef.current?.click()} />
+              <DropHint
+                onPick={() => inputRef.current?.click()}
+                onWriteNote={() => setComposing({})}
+              />
             )
           ) : (
             shown.map((file) => (
@@ -253,6 +281,7 @@ export function CourseWorkspace({
                 myCourses={myCourses}
                 active={selected?.path === file.path}
                 onOpen={() => setSelected(file)}
+                onEdit={() => setComposing({ file })}
                 onNotice={setNotice}
                 onChanged={async () => {
                   setSelected(null);
@@ -297,7 +326,13 @@ export function CourseWorkspace({
   );
 }
 
-function DropHint({ onPick }: { onPick: () => void }) {
+function DropHint({
+  onPick,
+  onWriteNote,
+}: {
+  onPick: () => void;
+  onWriteNote: () => void;
+}) {
   return (
     <div className="flex flex-col items-center px-6 py-14 text-center">
       <Paperclip className="mb-3 h-6 w-6 text-faint" />
@@ -305,9 +340,15 @@ function DropHint({ onPick }: { onPick: () => void }) {
       <p className="mt-1 text-xs leading-5 text-muted">
         Drag files of any type anywhere on this page, or
       </p>
-      <button onClick={onPick} className="btn-ghost mt-3">
-        Choose files
-      </button>
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
+        <button onClick={onPick} className="btn-ghost">
+          Choose files
+        </button>
+        <button onClick={onWriteNote} className="btn-ghost">
+          <NotebookPen className="h-4 w-4" />
+          Write a note
+        </button>
+      </div>
     </div>
   );
 }
@@ -326,6 +367,7 @@ function FileRow({
   myCourses,
   active,
   onOpen,
+  onEdit,
   onChanged,
   onNotice,
 }: {
@@ -335,6 +377,8 @@ function FileRow({
   myCourses: Course[];
   active: boolean;
   onOpen: () => void;
+  /** Only offered for notes, and only in my own vault. */
+  onEdit: () => void;
   onChanged: () => void;
   onNotice: (msg: string) => void;
 }) {
@@ -506,6 +550,15 @@ function FileRow({
           )
         ) : (
           <>
+            {file.kind === "markdown" && (
+              <button
+                onClick={onEdit}
+                className="rounded p-1.5 text-faint hover:bg-surface hover:text-accent"
+                title="Edit this note"
+              >
+                <NotebookPen className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button
               onClick={() => setRenaming(true)}
               className="rounded p-1.5 text-faint hover:bg-surface hover:text-ink"
@@ -525,5 +578,154 @@ function FileRow({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Write a note straight into the course — no file to upload. Creating one
+ * POSTs to /api/note; opening an existing note loads its markdown and PUTs the
+ * edit back. Deleting is the ordinary file delete, so nothing extra is needed.
+ */
+function NoteComposer({
+  code,
+  file,
+  onCancel,
+  onSaved,
+}: {
+  code: string;
+  /** Set when editing an existing note, absent when writing a new one. */
+  file?: VaultFile;
+  onCancel: () => void;
+  onSaved: (message: string) => void;
+}) {
+  const editing = !!file;
+  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(editing);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!file) return;
+    // `loading` already starts true when editing, so nothing is set here
+    // synchronously — only once the fetch settles.
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(fileUrl(code, file.name), {
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("Could not open that note");
+        const body = await res.text();
+        setText(body);
+        setLoading(false);
+      } catch (e: unknown) {
+        if (controller.signal.aborted) return;
+        setError(e instanceof Error ? e.message : "Could not open that note");
+        setLoading(false);
+      }
+    })();
+    return () => controller.abort();
+  }, [code, file]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/note", {
+        method: editing ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          editing
+            ? { code, name: file.name, sha: file.sha, text }
+            : { code, title, text },
+        ),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body.error ?? "Could not save that note");
+        return;
+      }
+      onSaved(
+        editing ? `Updated ${file.name}.` : `Saved ${body.name} to ${code}.`,
+      );
+    } catch {
+      setError("Could not reach the server. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={save} className="card mb-4 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <NotebookPen className="h-4 w-4 text-accent" />
+        <h2 className="text-sm font-medium">
+          {editing ? `Editing ${file.name}` : `New note in ${code}`}
+        </h2>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="ml-auto rounded p-1 text-faint hover:bg-raised hover:text-ink"
+          title="Cancel"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {!editing && (
+        <input
+          autoFocus
+          className="field mb-2"
+          placeholder="Title — becomes the note's filename"
+          value={title}
+          maxLength={120}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      )}
+
+      <textarea
+        autoFocus={editing}
+        className="field min-h-[160px] resize-y font-mono text-[13px] leading-6"
+        placeholder={
+          editing
+            ? "Markdown…"
+            : "A few words summarising this topic. Markdown works — # headings, **bold**, - lists."
+        }
+        value={loading ? "" : text}
+        disabled={loading}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onCancel();
+          // Ctrl/Cmd+Enter saves, so a long note never needs the mouse.
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void save(e);
+        }}
+      />
+
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={busy || loading || (!editing && !title.trim() && !text.trim()) || (editing && !text.trim())}
+        >
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Check className="h-4 w-4" />
+          )}
+          {editing ? "Save changes" : "Save note"}
+        </button>
+        <button type="button" onClick={onCancel} className="btn-ghost">
+          Cancel
+        </button>
+        <span className="ml-auto text-xs text-faint">
+          {loading ? "Loading…" : "Saved into your vault as a .md file"}
+        </span>
+      </div>
+    </form>
   );
 }
