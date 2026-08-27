@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { CodeEditor } from "./CodeEditor";
+import { CodePad } from "./CodePad";
 import { FileViewer, fileUrl } from "./FileViewer";
 import { MAX_FILE_BYTES, uploadFiles, type UploadProgress } from "@/lib/upload";
 import {
@@ -863,6 +864,7 @@ function NewCodeFile({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const trimmed = name.trim();
   // Checked here only to say so immediately; the server checks it again.
@@ -873,11 +875,11 @@ function NewCodeFile({
   );
   const tooBig = bytes > MAX_CODE_BYTES;
 
-  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
-    // Only help when there is nothing to overwrite — a name already typed is a
-    // deliberate choice, and a second paste should not undo it.
-    if (name !== "" || text !== "") return;
-    const pasted = e.clipboardData.getData("text");
+  // Fires only for a paste that filled the whole editor, so there is never
+  // pasted code being overwritten. A name already typed is a deliberate
+  // choice, though, and a paste should not undo it.
+  function handlePaste(pasted: string) {
+    if (name !== "") return;
     const guess = suggestFilename(pasted);
     if (!guess) return;
 
@@ -917,7 +919,7 @@ function NewCodeFile({
   }
 
   return (
-    <form onSubmit={create} className="card mb-4 p-4">
+    <form ref={formRef} onSubmit={create} className="card mb-4 p-4">
       <div className="mb-3 flex items-center gap-2">
         <Code2 className="h-4 w-4 text-accent" />
         <h2 className="text-sm font-medium">New code file in {code}</h2>
@@ -954,19 +956,17 @@ function NewCodeFile({
         </p>
       )}
 
-      <textarea
-        className="field mt-3 min-h-[180px] resize-y font-mono text-[13px] leading-6"
-        placeholder="Paste code here — or leave this empty to start from a template."
-        value={text}
-        spellCheck={false}
-        onPaste={handlePaste}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onCancel();
-          // Enter is a newline in a code box, so submitting needs the modifier.
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void create(e);
-        }}
-      />
+      <div className="mt-3">
+        <CodePad
+          value={text}
+          filename={trimmed}
+          onChange={setText}
+          onPasteAll={handlePaste}
+          onEscape={onCancel}
+          onSubmit={() => formRef.current?.requestSubmit()}
+          placeholder="Paste code here — or leave this empty to start from a template."
+        />
+      </div>
 
       <div className="mt-2 flex items-center gap-3 text-xs text-faint">
         {text ? (
@@ -976,6 +976,7 @@ function NewCodeFile({
         ) : (
           <span>Empty — you&apos;ll get a starter template.</span>
         )}
+        <span>Tab indents · Ctrl/⌘+Space suggests</span>
         {!unknownType && trimmed !== "" && (
           <span className="ml-auto">{languageLabelOf(trimmed)}</span>
         )}

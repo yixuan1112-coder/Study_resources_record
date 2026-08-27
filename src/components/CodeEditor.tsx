@@ -5,33 +5,23 @@ import {
   useEffect,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
-import Editor, { loader, type OnMount } from "@monaco-editor/react";
-import type * as Monaco from "monaco-editor";
+import Editor, { type OnMount } from "@monaco-editor/react";
 import { AlertCircle, Download, Loader2, Save, X } from "lucide-react";
 import { fileUrl } from "./FileViewer";
 import {
+  editorOptions,
+  prepareMonaco,
+  themeOf,
+  usePrefersDark,
+} from "@/lib/monaco";
+import {
   MAX_CODE_BYTES,
-  extOf,
   formatBytes,
   languageLabelOf,
   languageOf,
   type VaultFile,
 } from "@/lib/types";
-
-/**
- * Monaco is served from our own origin rather than a CDN — see
- * scripts/sync-monaco.mjs. This has to run before the first editor mounts,
- * which is why it sits at module scope.
- */
-loader.config({ paths: { vs: "/monaco/vs" } });
-
-/** Languages whose communities settled on two spaces rather than four. */
-const TWO_SPACE = new Set([
-  "js", "mjs", "cjs", "jsx", "ts", "tsx", "json", "jsonc", "html", "htm",
-  "css", "scss", "less", "yaml", "yml", "vue", "svelte", "rb", "scala",
-]);
 
 type Buffer = {
   /** What is in the editor right now. */
@@ -285,8 +275,8 @@ export function CodeEditor({
             path={active.name}
             language={languageOf(active.name)}
             value={buffer?.text ?? ""}
-            theme={dark ? "vault-dark" : "vault-light"}
-            beforeMount={defineThemes}
+            theme={themeOf(dark)}
+            beforeMount={prepareMonaco}
             onMount={handleMount}
             onChange={(value) => patch(active.name, { text: value ?? "" })}
             loading={
@@ -295,24 +285,7 @@ export function CodeEditor({
                 Starting the editor…
               </div>
             }
-            options={{
-              readOnly,
-              fontSize: 13,
-              lineHeight: 20,
-              fontFamily:
-                "var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              automaticLayout: true,
-              tabSize: TWO_SPACE.has(extOf(active.name)) ? 2 : 4,
-              insertSpaces: true,
-              renderWhitespace: "selection",
-              smoothScrolling: true,
-              padding: { top: 12, bottom: 12 },
-              scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
-              overviewRulerLanes: 0,
-              stickyScroll: { enabled: false },
-            }}
+            options={editorOptions(active.name, { readOnly })}
           />
         )}
       </div>
@@ -348,55 +321,5 @@ export function CodeEditor({
         )}
       </div>
     </div>
-  );
-}
-
-/** Monaco needs literal colours, so these mirror globals.css by hand. */
-function defineThemes(monaco: typeof Monaco) {
-  monaco.editor.defineTheme("vault-light", {
-    base: "vs",
-    inherit: true,
-    rules: [],
-    colors: {
-      "editor.background": "#ffffff",
-      "editorGutter.background": "#ffffff",
-      "editorLineNumber.foreground": "#8b8b96",
-      "editorLineNumber.activeForeground": "#16161a",
-      "editor.lineHighlightBackground": "#f7f7f8",
-      "editorIndentGuide.background1": "#e3e3e7",
-    },
-  });
-  monaco.editor.defineTheme("vault-dark", {
-    base: "vs-dark",
-    inherit: true,
-    rules: [],
-    colors: {
-      "editor.background": "#151519",
-      "editorGutter.background": "#151519",
-      "editorLineNumber.foreground": "#71717f",
-      "editorLineNumber.activeForeground": "#ececf1",
-      "editor.lineHighlightBackground": "#1d1d23",
-      "editorIndentGuide.background1": "#2b2b33",
-      "editorWidget.background": "#1d1d23",
-      "editorSuggestWidget.background": "#1d1d23",
-    },
-  });
-}
-
-/** The page follows the OS colour scheme, and so should the editor. */
-const DARK_QUERY = "(prefers-color-scheme: dark)";
-
-function subscribeToScheme(onChange: () => void) {
-  const mq = window.matchMedia(DARK_QUERY);
-  mq.addEventListener("change", onChange);
-  return () => mq.removeEventListener("change", onChange);
-}
-
-function usePrefersDark(): boolean {
-  return useSyncExternalStore(
-    subscribeToScheme,
-    () => window.matchMedia(DARK_QUERY).matches,
-    // On the server there is no media query; light is the CSS default too.
-    () => false,
   );
 }
