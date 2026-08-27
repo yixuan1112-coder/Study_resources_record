@@ -1,8 +1,9 @@
 # NTU Course Vault
 
 A small web app for keeping every NTU course's material in one indexed place —
-lecture PDFs, your own markdown notes, and photos of the whiteboard — so that
-revision means opening one page instead of digging through Downloads.
+lecture PDFs, your own markdown notes, photos of the whiteboard, and the code
+you wrote for the labs — so that revision means opening one page instead of
+digging through Downloads.
 
 Sign in with GitHub. Your files are stored in a **private repository on your own
 GitHub account**, one folder per course code.
@@ -14,6 +15,7 @@ your-github-account/ntu-course-vault
     ├── CZ1003/
     │   ├── lecture-01.pdf
     │   ├── my-summary.md
+    │   ├── lab1.py         # written in the browser editor
     │   └── whiteboard.jpg
     └── MH1812/
         └── tutorial-3.pdf
@@ -29,6 +31,11 @@ your-github-account/ntu-course-vault
   anything. Hit **Write a note**, give it a title and a few words, and it is
   saved as an ordinary `.md` file in that course. Edit it later from the pencil
   on its row, or delete it exactly like any other file.
+- **Write code, or paste it in** — a course is also a place to keep the code you
+  wrote for it. Hit **New code file**, name it `lab1.py`, and it opens in a real
+  editor with syntax highlighting, tabs and `Ctrl`/`Cmd`+`S`. Already have the
+  code somewhere else? Paste it into the same panel and it is saved as that
+  file. See [Editor](#editor).
 - **Preview in the browser** — PDFs render inline, markdown renders as formatted
   notes (GFM tables, code, task lists), images display directly.
 - **Rename, move, delete** — without leaving the page. Every change is an
@@ -98,6 +105,64 @@ Open http://localhost:3000.
 
 Anyone you share the link with signs in with their own GitHub account and gets
 their own private vault — they never see your files, and you never see theirs.
+
+## Editor
+
+Markdown notes are prose, so they get a plain writing box. Source files get
+Monaco — the editor VS Code itself is built on — because writing Python in a
+`<textarea>` is miserable.
+
+### Getting code in
+
+There are three ways, and they all end at the same place — an ordinary file in
+`courses/<CODE>/`:
+
+- **Write it here.** **New code file**, name it, and start typing. Languages
+  where an empty file is useless (Python, Java, C, C++, HTML, shell, JSON) open
+  with a few lines of scaffolding rather than a blank page.
+- **Paste it.** The same panel has a box for pasting. Paste before you have
+  picked a name and the language is recognised from the code itself — Python,
+  Java, C, C++, C#, Go, Rust, TypeScript, JavaScript, SQL, R, HTML, JSON and a
+  shebang line — so the filename is filled in with the right extension and the
+  stem left selected for you to type over. A pasted Java class is named after
+  the class, because Java gives you no choice. CRLF line endings and a leading
+  BOM are cleaned up on the way in, so a file copied out of a Windows editor
+  does not show up as noise in its first diff. Pasting is capped at 1 MB.
+- **Upload it.** Drag `.py` files onto the page like any other upload — several
+  at once is fine. They are recognised as code and open in the editor. Folders
+  are not unpacked, so drop the files themselves.
+
+### Editing
+
+Click any source file in a course to open it. It behaves the way an editor
+should:
+
+- **Tabs.** Several files open at once, each keeping its own undo history,
+  cursor and scroll position. A dot on the tab means unsaved changes.
+- **Syntax highlighting** for Python, Java, C/C++, JavaScript, TypeScript, SQL,
+  R, HTML/CSS and about forty others — the extension picks the language. A few
+  formats students actually use have no grammar shipped with Monaco (MATLAB
+  `.m`, LaTeX `.tex`, VHDL); those open as plain text rather than not at all.
+- **`Ctrl`/`Cmd`+`S` saves**, and a save is one commit to your vault repo with
+  the message `Update lab1.py in CZ1003`. Nothing autosaves, so a half-finished
+  edit never lands in the history.
+- **Opening a PDF does not close the editor.** The preview pane covers it and
+  your unsaved buffers are still there when you come back.
+- **Shared vaults open read-only**, like everything else a coursemate shares.
+
+If the same file changed on github.com while you had it open, the save is
+refused rather than silently overwriting that version — close the tab, reopen
+it, and you get the newer text.
+
+Two limits worth knowing. Files are flat within a course, so there are no
+subfolders: `courses/CZ1003/lab1.py`, not `courses/CZ1003/src/lab1.py`. And
+nothing is executed — this is an editor, not a runtime. Clone the repo to run
+your code.
+
+The editor's own JavaScript is served from this app rather than a CDN, so it
+works offline and behind a campus proxy. `npm run dev` and `npm run build` copy
+it out of `node_modules` into `public/monaco` first; that directory is
+generated, and gitignored.
 
 ## Sharing
 
@@ -173,6 +238,7 @@ it was revoked. Check Study group.
 | Concern | Approach |
 | --- | --- |
 | Auth | Auth.js (NextAuth v5), GitHub OAuth with PKCE, JWT session cookie |
+| Editor | Monaco, self-hosted from `public/monaco`; one commit per save |
 | Storage | The GitHub Contents and Git Data APIs — no database |
 | Reads | Proxied through `/api/file`, because vault repos are private |
 | Multi-file upload | One blob per file, then a single tree + commit |
@@ -210,6 +276,13 @@ browser understands get an inline preview, and the rest get a download button.
   in the git history, recoverable with `git log --diff-filter=D`.
 - Images referenced from a note by bare filename (`![](diagram.png)`) resolve
   against that course's folder.
+- A file written in the editor is an ordinary file too: rename it, move it to
+  another course, delete it, or let a coursemate **Save a copy**. Saving from
+  the browser is capped at 1 MB of text; a generated file bigger than that can
+  still be uploaded, it just opens as a download rather than in the editor.
+- HTML and SVG files are served with a sandbox `Content-Security-Policy`, so
+  previewing one — including one out of a vault someone shared with you —
+  cannot run script against your session.
 - A note written in the app is just a file, so everything that works on files
   works on it: rename, move to another course, delete, and — for coursemates you
   have shared the vault with — read and **Save a copy**. The title becomes the

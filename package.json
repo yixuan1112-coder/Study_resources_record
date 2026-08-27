@@ -3,13 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/sync-monaco.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/sync-monaco.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "lucide-react": "^0.469.0",
+    "monaco-editor": "^0.52.2",
     "next": "^16.3.0",
     "next-auth": "^5.0.0-beta.32",
     "react": "^19.2.8",

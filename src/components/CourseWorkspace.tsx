@@ -5,7 +5,10 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Check,
+  ClipboardPaste,
+  Code2,
   Download,
+  FileCode2,
   FileText,
   Image as ImageIcon,
   Loader2,
@@ -17,11 +20,16 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { CodeEditor } from "./CodeEditor";
 import { FileViewer, fileUrl } from "./FileViewer";
 import { MAX_FILE_BYTES, uploadFiles, type UploadProgress } from "@/lib/upload";
 import {
+  MAX_CODE_BYTES,
   colorForCode,
   formatBytes,
+  isCodeFile,
+  languageLabelOf,
+  suggestFilename,
   type Course,
   type FileKind,
   type VaultFile,
@@ -31,6 +39,7 @@ const FILTERS: { key: FileKind | "all"; label: string }[] = [
   { key: "all", label: "All" },
   { key: "pdf", label: "PDFs" },
   { key: "markdown", label: "Notes" },
+  { key: "code", label: "Code" },
   { key: "image", label: "Images" },
   { key: "other", label: "Other" },
 ];
@@ -58,8 +67,54 @@ export function CourseWorkspace({
   const [dragging, setDragging] = useState(false);
   /** null = closed. `{}` = writing a new note. `{ file }` = editing that note. */
   const [composing, setComposing] = useState<{ file?: VaultFile } | null>(null);
+  const [creatingFile, setCreatingFile] = useState(false);
+  /** Filenames open as editor tabs, in tab order. */
+  const [openNames, setOpenNames] = useState<string[]>([]);
+  const [activeName, setActiveName] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const color = colorForCode(course.code);
+
+  // Tabs are derived from the file list rather than stored, so a file that is
+  // renamed or deleted elsewhere on the page simply stops being a tab.
+  const tabs = useMemo(
+    () =>
+      openNames
+        .map((n) => files.find((f) => f.name === n))
+        .filter((f): f is VaultFile => !!f),
+    [openNames, files],
+  );
+  const activeTab =
+    tabs.find((f) => f.name === activeName) ?? tabs[tabs.length - 1] ?? null;
+
+  /** Code opens in the editor; everything else opens in the preview pane. */
+  const openFile = useCallback((file: VaultFile) => {
+    if (file.kind === "code") {
+      setSelected(null);
+      setOpenNames((prev) =>
+        prev.includes(file.name) ? prev : [...prev, file.name],
+      );
+      setActiveName(file.name);
+    } else {
+      setSelected(file);
+    }
+  }, []);
+
+  const closeTab = useCallback(
+    (file: VaultFile) => {
+      const i = openNames.indexOf(file.name);
+      const next = openNames.filter((n) => n !== file.name);
+      setOpenNames(next);
+      if (activeName === file.name) {
+        setActiveName(next[Math.min(i, next.length - 1)] ?? null);
+      }
+    },
+    [activeName, openNames],
+  );
+
+  /** Keep the row's sha current after a save, so rename and delete still work. */
+  const handleSaved = useCallback((name: string, sha: string) => {
+    setFiles((prev) => prev.map((f) => (f.name === name ? { ...f, sha } : f)));
+  }, []);
 
   const load = useCallback(async () => {
     const q = new URLSearchParams({ code: course.code });
@@ -171,6 +226,14 @@ export function CourseWorkspace({
               Write a note
             </button>
             <button
+              className="btn-ghost"
+              onClick={() => setCreatingFile(true)}
+              title="Start a source file, or paste one in"
+            >
+              <Code2 className="h-4 w-4" />
+              New code file
+            </button>
+            <button
               className="btn-primary"
               disabled={!!progress}
               onClick={() => inputRef.current?.click()}
@@ -223,6 +286,22 @@ export function CourseWorkspace({
         </div>
       )}
 
+      {creatingFile && !readOnly && (
+        <NewCodeFile
+          code={course.code}
+          onCancel={() => setCreatingFile(false)}
+          onCreated={async (name) => {
+            setCreatingFile(false);
+            await load();
+            setSelected(null);
+            setOpenNames((prev) =>
+              prev.includes(name) ? prev : [...prev, name],
+            );
+            setActiveName(name);
+          }}
+        />
+      )}
+
       {composing && !readOnly && (
         <NoteComposer
           code={course.code}
@@ -269,6 +348,7 @@ export function CourseWorkspace({
               <DropHint
                 onPick={() => inputRef.current?.click()}
                 onWriteNote={() => setComposing({})}
+                onNewCodeFile={() => setCreatingFile(true)}
               />
             )
           ) : (
@@ -279,8 +359,11 @@ export function CourseWorkspace({
                 code={course.code}
                 owner={owner}
                 myCourses={myCourses}
-                active={selected?.path === file.path}
-                onOpen={() => setSelected(file)}
+                active={
+                  selected?.path === file.path ||
+                  (!selected && activeTab?.path === file.path)
+                }
+                onOpen={() => openFile(file)}
                 onEdit={() => setComposing({ file })}
                 onNotice={setNotice}
                 onChanged={async () => {
@@ -293,6 +376,22 @@ export function CourseWorkspace({
         </div>
 
         <div className="card min-h-[420px] overflow-hidden">
+          {/* The editor stays mounted while a PDF or an image is being
+              previewed, so glancing at one never discards unsaved code. */}
+          {activeTab && (
+            <div className={selected ? "hidden" : "h-full"}>
+              <CodeEditor
+                code={course.code}
+                tabs={tabs}
+                active={activeTab}
+                owner={owner}
+                onActivate={(f) => setActiveName(f.name)}
+                onClose={closeTab}
+                onSaved={handleSaved}
+              />
+            </div>
+          )}
+
           {selected ? (
             <FileViewer
               code={course.code}
@@ -300,11 +399,14 @@ export function CourseWorkspace({
               owner={owner}
               onClose={() => setSelected(null)}
             />
-          ) : (
+          ) : activeTab ? null : (
             <div className="flex h-full min-h-[420px] flex-col items-center justify-center px-6 text-center">
               <FileText className="mb-3 h-8 w-8 text-faint" />
               <p className="text-sm text-muted">
                 Pick a file on the left to read it here.
+              </p>
+              <p className="mt-1 text-xs text-faint">
+                Source files open in the editor.
               </p>
             </div>
           )}
@@ -329,9 +431,11 @@ export function CourseWorkspace({
 function DropHint({
   onPick,
   onWriteNote,
+  onNewCodeFile,
 }: {
   onPick: () => void;
   onWriteNote: () => void;
+  onNewCodeFile: () => void;
 }) {
   return (
     <div className="flex flex-col items-center px-6 py-14 text-center">
@@ -348,6 +452,10 @@ function DropHint({
           <NotebookPen className="h-4 w-4" />
           Write a note
         </button>
+        <button onClick={onNewCodeFile} className="btn-ghost">
+          <Code2 className="h-4 w-4" />
+          New code file
+        </button>
       </div>
     </div>
   );
@@ -356,6 +464,7 @@ function DropHint({
 const ICONS: Record<FileKind, React.ReactNode> = {
   pdf: <FileText className="h-4 w-4" />,
   markdown: <FileText className="h-4 w-4" />,
+  code: <FileCode2 className="h-4 w-4" />,
   image: <ImageIcon className="h-4 w-4" />,
   other: <Paperclip className="h-4 w-4" />,
 };
@@ -725,6 +834,180 @@ function NoteComposer({
         <span className="ml-auto text-xs text-faint">
           {loading ? "Loading…" : "Saved into your vault as a .md file"}
         </span>
+      </div>
+    </form>
+  );
+}
+
+
+/**
+ * Start a source file in this course, either from scratch or from code pasted
+ * in. Both land in the same place, so this is one panel rather than two: name
+ * it, optionally paste into it, and it opens in the editor.
+ *
+ * Pasting first is the common order — you copy something out of an IDE and
+ * only then think about what to call it — so a paste into an empty name box
+ * fills in a name and leaves the stem selected, ready to be typed over.
+ */
+function NewCodeFile({
+  code,
+  onCancel,
+  onCreated,
+}: {
+  code: string;
+  onCancel: () => void;
+  onCreated: (name: string) => void | Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  const trimmed = name.trim();
+  // Checked here only to say so immediately; the server checks it again.
+  const unknownType = trimmed !== "" && !isCodeFile(trimmed);
+  const bytes = useMemo(
+    () => new TextEncoder().encode(text).length,
+    [text],
+  );
+  const tooBig = bytes > MAX_CODE_BYTES;
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    // Only help when there is nothing to overwrite — a name already typed is a
+    // deliberate choice, and a second paste should not undo it.
+    if (name !== "" || text !== "") return;
+    const pasted = e.clipboardData.getData("text");
+    const guess = suggestFilename(pasted);
+    if (!guess) return;
+
+    setName(guess);
+    // Select just the stem, so the next keystroke replaces "untitled" and
+    // keeps the extension the guess got right.
+    const stem = guess.lastIndexOf(".");
+    requestAnimationFrame(() => {
+      nameRef.current?.focus();
+      nameRef.current?.setSelectionRange(0, stem);
+    });
+  }
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy || !trimmed || unknownType || tooBig) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Omitting `text` entirely is what asks for the starter template.
+        body: JSON.stringify({ code, name: trimmed, ...(text ? { text } : {}) }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body.error ?? "Could not create that file");
+        return;
+      }
+      await onCreated(body.name as string);
+    } catch {
+      setError("Could not reach the server. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={create} className="card mb-4 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Code2 className="h-4 w-4 text-accent" />
+        <h2 className="text-sm font-medium">New code file in {code}</h2>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="ml-auto rounded p-1 text-faint hover:bg-raised hover:text-ink"
+          title="Cancel"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <input
+        ref={nameRef}
+        autoFocus
+        className="field font-mono text-[13px]"
+        placeholder="lab1.py"
+        value={name}
+        maxLength={120}
+        spellCheck={false}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && onCancel()}
+      />
+
+      {unknownType ? (
+        <p className="mt-2 text-sm text-danger">
+          The editor doesn&apos;t know that extension. Try .py, .java, .c, .cpp,
+          .js, .ts, .html, .sql, .r or .m.
+        </p>
+      ) : (
+        <p className="mt-2 text-xs text-faint">
+          The extension picks the language — lab1.py, Matrix.java, solution.cpp.
+        </p>
+      )}
+
+      <textarea
+        className="field mt-3 min-h-[180px] resize-y font-mono text-[13px] leading-6"
+        placeholder="Paste code here — or leave this empty to start from a template."
+        value={text}
+        spellCheck={false}
+        onPaste={handlePaste}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onCancel();
+          // Enter is a newline in a code box, so submitting needs the modifier.
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void create(e);
+        }}
+      />
+
+      <div className="mt-2 flex items-center gap-3 text-xs text-faint">
+        {text ? (
+          <span>
+            {text.split("\n").length} lines · {formatBytes(bytes)}
+          </span>
+        ) : (
+          <span>Empty — you&apos;ll get a starter template.</span>
+        )}
+        {!unknownType && trimmed !== "" && (
+          <span className="ml-auto">{languageLabelOf(trimmed)}</span>
+        )}
+      </div>
+
+      {tooBig && (
+        <p className="mt-2 text-sm text-danger">
+          That snippet is {formatBytes(bytes)} — the limit for pasting is{" "}
+          {formatBytes(MAX_CODE_BYTES)}. Upload it as a file instead.
+        </p>
+      )}
+
+      {error && <p className="mt-2 text-sm text-danger">{error}</p>}
+
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={busy || !trimmed || unknownType || tooBig}
+        >
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : text ? (
+            <ClipboardPaste className="h-4 w-4" />
+          ) : (
+            <Check className="h-4 w-4" />
+          )}
+          Create and open
+        </button>
+        <button type="button" onClick={onCancel} className="btn-ghost">
+          Cancel
+        </button>
       </div>
     </form>
   );

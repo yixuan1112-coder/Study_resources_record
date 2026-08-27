@@ -127,6 +127,11 @@ export async function readFile(
   }
 }
 
+/**
+ * Create or overwrite a text file. Returns the blob sha of what was just
+ * written, which the editor needs in order to save a second time without
+ * reloading the file.
+ */
 export async function writeFile(
   token: string,
   owner: string,
@@ -134,16 +139,21 @@ export async function writeFile(
   content: string,
   message: string,
   sha?: string,
-): Promise<void> {
-  await gh(token, `/repos/${owner}/${VAULT_REPO}/contents/${encodePath(path)}`, {
-    method: "PUT",
-    body: JSON.stringify({
-      message,
-      content: Buffer.from(content, "utf8").toString("base64"),
-      branch: VAULT_BRANCH,
-      ...(sha ? { sha } : {}),
-    }),
-  });
+): Promise<string> {
+  const out = await gh<{ content?: { sha?: string } }>(
+    token,
+    `/repos/${owner}/${VAULT_REPO}/contents/${encodePath(path)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        message,
+        content: Buffer.from(content, "utf8").toString("base64"),
+        branch: VAULT_BRANCH,
+        ...(sha ? { sha } : {}),
+      }),
+    },
+  );
+  return out?.content?.sha ?? "";
 }
 
 /** Write already-base64-encoded bytes (used when copying a shared file). */
