@@ -119,3 +119,67 @@ body {
 .prose-notes hr {
   @apply my-6 border-line;
 }
+
+/*
+ * pdf.js text layer.
+ *
+ * The words are rendered into the canvas as pixels; this layer puts an
+ * invisible, exactly-positioned copy of them on top so the browser's own
+ * selection works — which is what a highlight is measured from. Flattened by
+ * hand out of pdfjs-dist/web/pdf_viewer.css, which uses CSS nesting that this
+ * build does not compile.
+ */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer span[role="img"] {
+  user-select: none;
+  cursor: default;
+}
+
+/* Selection is only a preview here — the highlight that replaces it is drawn
+   in the layer underneath, so this stays faint on purpose. */
+.textLayer ::selection {
+  background: rgb(var(--accent-rgb) / 0.25);
+}

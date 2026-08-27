@@ -43,3 +43,6 @@ next-env.d.ts
 
 # monaco editor runtime, copied out of node_modules by scripts/sync-monaco.mjs
 /public/monaco
+
+# pdf.js runtime, copied out of node_modules by scripts/sync-pdfjs.mjs
+/public/pdfjs

@@ -1,7 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteFile, listDir, movePath } from "@/lib/github";
+import { deleteFile, listDir, movePath, readFile } from "@/lib/github";
 import { getActor, resolveVault, toErrorResponse, unauthorized } from "@/lib/session";
 import { isSafeFilename, kindOf, normalizeCode, type VaultFile } from "@/lib/types";
+import { annotationsPath } from "@/lib/annotations";
+
+/**
+ * A PDF's highlights live in a sibling file, so renaming or deleting the PDF
+ * has to take them along — otherwise the notes are orphaned under a name
+ * nothing points at any more.
+ *
+ * Best effort on purpose: losing track of the highlights is a much smaller
+ * problem than a rename that reports failure after the file has already moved.
+ */
+async function followAnnotations(
+  token: string,
+  owner: string,
+  code: string,
+  name: string,
+  to: { code: string; name: string } | null,
+): Promise<void> {
+  if (kindOf(name) !== "pdf") return;
+  const from = annotationsPath(code, name);
+  try {
+    const existing = await readFile(token, owner, from);
+    if (!existing) return;
+    if (to) {
+      await movePath(
+        token,
+        owner,
+        from,
+        annotationsPath(to.code, to.name),
+        existing.sha,
+        `Move notes for ${name}`,
+      );
+    } else {
+      await deleteFile(token, owner, from, existing.sha, `Delete notes for ${name}`);
+    }
+  } catch {
+    // Swallowed: see above.
+  }
+}
 
 /** List every file in a course folder — mine, or a friend's shared vault. */
 export async function GET(req: NextRequest) {
@@ -84,6 +122,10 @@ export async function PATCH(req: NextRequest) {
       sha,
       `Rename ${name} to ${newName}`,
     );
+    await followAnnotations(actor.token, actor.owner, code, name, {
+      code: newCode,
+      name: newName,
+    });
     return NextResponse.json({ ok: true, path: to });
   } catch (e) {
     return toErrorResponse(e);
@@ -109,6 +151,7 @@ export async function DELETE(req: NextRequest) {
       sha,
       `Delete ${name} from ${code}`,
     );
+    await followAnnotations(actor.token, actor.owner, code, name, null);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return toErrorResponse(e);

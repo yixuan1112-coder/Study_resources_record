@@ -5,6 +5,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Download, ExternalLink, Loader2, X } from "lucide-react";
 import { formatBytes, type VaultFile } from "@/lib/types";
+import { PdfViewer } from "./PdfViewer";
 
 /** `owner` is set only when reading a vault someone shared with me. */
 export function fileUrl(
@@ -67,11 +68,9 @@ export function FileViewer({
 
       <div className="min-h-0 flex-1 overflow-auto">
         {file.kind === "pdf" ? (
-          <iframe
-            src={src}
-            title={file.name}
-            className="h-full min-h-[70vh] w-full border-0"
-          />
+          // Keyed so opening a different PDF starts from a clean reader
+          // instead of inheriting the previous one's pages and highlights.
+          <PdfViewer key={src} code={code} file={file} src={src} owner={owner} />
         ) : file.kind === "image" ? (
           <div className="flex h-full items-center justify-center p-4">
             {/* Proxied through our API because vault repos are private. */}
