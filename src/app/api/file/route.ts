@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ghRaw } from "@/lib/github";
 import { getActor, resolveVault, unauthorized } from "@/lib/session";
-import { extOf, isSafeFilename, mimeOf, normalizeCode } from "@/lib/types";
+import { isSafeFilename, mimeOf, normalizeCode } from "@/lib/types";
 
 /**
  * Streams a file out of the private vault repo. The repo is private, so the
@@ -28,8 +28,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const type = mimeOf(name);
   const headers = new Headers({
-    "Content-Type": mimeOf(name),
+    "Content-Type": type,
     "Cache-Control": "private, max-age=60",
     "X-Content-Type-Options": "nosniff",
     "Content-Disposition": `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(name)}`,
@@ -38,9 +39,16 @@ export async function GET(req: NextRequest) {
   const length = upstream.headers.get("content-length");
   if (length) headers.set("Content-Length", length);
 
-  // SVGs are active content when opened directly; neuter them.
-  if (extOf(name) === "svg") {
-    headers.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  // HTML and SVG are active content: served from this origin they would run
+  // script with the signed-in user's session, and a vault someone shared is
+  // full of files they wrote. `sandbox` drops the document into an opaque
+  // origin and the rest switches scripting off, which still leaves the file
+  // perfectly readable.
+  if (/^(text\/html|image\/svg\+xml)/.test(type)) {
+    headers.set(
+      "Content-Security-Policy",
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox",
+    );
   }
 
   return new NextResponse(upstream.body, { headers });
