@@ -1,0 +1,27 @@
+# The sandbox the vault's Run button sends code to.
+#
+# Piston (github.com/engineer-man/piston) runs each program in its own
+# throwaway container with CPU, memory, process and time limits, and no
+# network. The vault never executes anything itself — it only forwards the
+# editor buffer here and shows what comes back.
+#
+#   docker compose up -d
+#   ./install-packages.sh
+#
+# See README.md in this folder for the reverse proxy and the shared token.
+services:
+  api:
+    image: ghcr.io/engineer-man/piston:latest
+    container_name: piston_api
+    restart: always
+    # Piston creates its own isolated containers per job, which needs this.
+    privileged: true
+    ports:
+      # Loopback on purpose. The only way in is through the reverse proxy,
+      # which checks the shared token first — an open code runner on the
+      # public internet is free compute for whoever finds it.
+      - "127.0.0.1:2000:2000"
+    volumes:
+      - ./packages:/piston/packages
+    tmpfs:
+      - /tmp:exec,size=512m

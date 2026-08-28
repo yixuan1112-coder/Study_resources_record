@@ -7,8 +7,10 @@ import {
   useState,
 } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
-import { AlertCircle, Download, Loader2, Save, X } from "lucide-react";
+import { AlertCircle, Download, Loader2, Play, Save, X } from "lucide-react";
 import { fileUrl } from "./FileViewer";
+import { RunPanel } from "./RunPanel";
+import { runLanguageOf, type RunOutcome } from "@/lib/run";
 import {
   editorOptions,
   prepareMonaco,
@@ -61,6 +63,15 @@ export function CodeEditor({
   const [buffers, setBuffers] = useState<Record<string, Buffer>>({});
   const [position, setPosition] = useState({ line: 1, column: 1 });
   const dark = usePrefersDark();
+
+  // Running is independent of saving: it is the buffer as typed that goes to
+  // the runner, so a change can be tried out before it is committed.
+  const [runtimes, setRuntimes] = useState<Set<string> | null>(null);
+  const [running, setRunning] = useState(false);
+  const [outcome, setOutcome] = useState<RunOutcome | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [stdin, setStdin] = useState("");
+  const [showRun, setShowRun] = useState(false);
 
   const buffer = buffers[active.name];
   const dirty = !!buffer && !buffer.loading && buffer.text !== buffer.savedText;
@@ -129,6 +140,50 @@ export function CodeEditor({
     }
   }, [tabs, buffers, code, owner, patch]);
 
+  // Which languages the runner has installed. Null until it answers; an empty
+  // set means running is switched off for this site.
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/run", { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("no runner"))))
+      .then((body: { languages?: string[] }) =>
+        setRuntimes(new Set(body.languages ?? [])),
+      )
+      .catch(() => {
+        if (!controller.signal.aborted) setRuntimes(new Set());
+      });
+    return () => controller.abort();
+  }, []);
+
+  const language = runLanguageOf(active.name);
+  const canRun =
+    !!language && !!runtimes?.has(language) && !buffer?.loading && !buffer?.oversize;
+
+  const run = useCallback(async () => {
+    const name = active.name;
+    const buf = buffers[name];
+    if (!buf || buf.loading || buf.oversize || running) return;
+
+    setRunning(true);
+    setShowRun(true);
+    setOutcome(null);
+    setRunError(null);
+    try {
+      const res = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, source: buf.text, stdin }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) setRunError((body as { error?: string }).error ?? "Could not run that");
+      else setOutcome(body as RunOutcome);
+    } catch {
+      setRunError("Could not reach the server");
+    } finally {
+      setRunning(false);
+    }
+  }, [active.name, buffers, running, stdin]);
+
   const save = useCallback(async () => {
     const name = active.name;
     const buf = buffers[name];
@@ -164,10 +219,20 @@ export function CodeEditor({
     saveRef.current = save;
   }, [save]);
 
+  const runRef = useRef(run);
+  useEffect(() => {
+    runRef.current = run;
+  }, [run]);
+
   const handleMount: OnMount = useCallback((editor, monaco) => {
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       void saveRef.current();
     });
+    // Ctrl/Cmd+Enter and F5, the two shortcuts a student arrives already
+    // expecting from an IDE.
+    const runNow = () => void runRef.current();
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runNow);
+    editor.addCommand(monaco.KeyCode.F5, runNow);
 
     const readPosition = () => {
       const at = editor.getPosition();
@@ -290,6 +355,17 @@ export function CodeEditor({
         )}
       </div>
 
+      {showRun && (
+        <RunPanel
+          running={running}
+          outcome={outcome}
+          error={runError}
+          stdin={stdin}
+          onStdin={setStdin}
+          onClose={() => setShowRun(false)}
+        />
+      )}
+
       <div className="flex items-center gap-3 border-t border-line px-3 py-1.5 text-xs text-faint">
         <span>{languageLabelOf(active.name)}</span>
         <span>
@@ -304,6 +380,28 @@ export function CodeEditor({
                 ? "Unsaved"
                 : "Saved"}
         </span>
+        {runtimes !== null && runtimes.size > 0 && (
+          <button
+            onClick={() => void run()}
+            disabled={!canRun || running}
+            className="btn-quiet -my-1 px-2 py-1 text-xs"
+            title={
+              !language
+                ? "The runner has no language for this file type"
+                : !runtimes.has(language)
+                  ? `The runner does not have ${language} installed`
+                  : "Run this file (Ctrl/Cmd+Enter)"
+            }
+          >
+            {running ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+            Run
+          </button>
+        )}
+
         {!readOnly && (
           <button
             onClick={() => void save()}

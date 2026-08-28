@@ -143,6 +143,13 @@ should:
   R, HTML/CSS and about forty others — the extension picks the language. A few
   formats students actually use have no grammar shipped with Monaco (MATLAB
   `.m`, LaTeX `.tex`, VHDL); those open as plain text rather than not at all.
+- **Auto-indent, auto-closing brackets and completions**, in the paste box as
+  well as in the editor. JavaScript, TypeScript, HTML, CSS and JSON get real
+  IntelliSense; Python, Java, C and C++ have no language service to give, so
+  they get their keywords, their standard library and the snippets that are
+  tedious to type (`main`, `fori`, `sout`, `def`, `try`), plus every identifier
+  already in the file. Indentation follows VS Code's own rules, so a
+  brace-less `if` body and a lone `else:` land where you expect.
 - **`Ctrl`/`Cmd`+`S` saves**, and a save is one commit to your vault repo with
   the message `Update lab1.py in CZ1003`. Nothing autosaves, so a half-finished
   edit never lands in the history.
@@ -154,15 +161,33 @@ If the same file changed on github.com while you had it open, the save is
 refused rather than silently overwriting that version — close the tab, reopen
 it, and you get the newer text.
 
-Two limits worth knowing. Files are flat within a course, so there are no
-subfolders: `courses/CZ1003/lab1.py`, not `courses/CZ1003/src/lab1.py`. And
-nothing is executed — this is an editor, not a runtime. Clone the repo to run
-your code.
+One limit worth knowing: files are flat within a course, so there are no
+subfolders — `courses/CZ1003/lab1.py`, not `courses/CZ1003/src/lab1.py`.
 
 The editor's own JavaScript is served from this app rather than a CDN, so it
 works offline and behind a campus proxy. `npm run dev` and `npm run build` copy
 it out of `node_modules` into `public/monaco` first; that directory is
 generated, and gitignored.
+
+### Running it
+
+**Run** (or `Ctrl`/`Cmd`+`Enter`, or `F5`) runs the file and shows what it
+printed, with a box for anything it reads from input. It runs the buffer as
+typed, not the last saved version, so an idea can be tried before it is
+committed — which is the point of having it here rather than in a terminal.
+
+Nothing runs in this app or in your browser. The buffer is forwarded to a
+sandbox you host, and the app shows what comes back: stdout, stderr, the exit
+code and how long it took. A program stopped at the time limit says so rather
+than looking like a crash.
+
+**This needs a machine with Docker — Vercel cannot do it.** Until one is
+configured there is no Run button at all, and nothing else about the editor
+changes. Setup, limits and the shared token are in
+[`runner/README.md`](runner/README.md); the languages installed by default are
+Python, Java, C, C++, JavaScript, TypeScript, Bash, SQLite and R. The Run
+button only appears for languages the sandbox actually has — the app asks it
+rather than assuming.
 
 ## Sharing
 
