@@ -82,9 +82,9 @@ export function CodeEditor({
     );
   }, []);
 
-  // Names already fetched. React can run this effect again before the state
-  // update lands (and does so twice in development), so the guard has to be
-  // something that changes synchronously.
+  // Versions already fetched, as `name@sha`. React can run this effect again
+  // before the state update lands (and does so twice in development), so the
+  // guard has to be something that changes synchronously.
   const requested = useRef(new Set<string>());
 
   // Read the text of tabs that have just been opened, and forget the ones that
@@ -92,16 +92,25 @@ export function CodeEditor({
   // resurrected from a buffer whose sha has since gone stale.
   useEffect(() => {
     const open = new Set(tabs.map((f) => f.name));
-    for (const name of requested.current) {
-      if (!open.has(name)) requested.current.delete(name);
+    const openVersions = new Set(tabs.map((f) => `${f.name}@${f.sha}`));
+    for (const key of requested.current) {
+      if (!openVersions.has(key)) requested.current.delete(key);
     }
 
-    const missing = tabs.filter(
-      (f) => !buffers[f.name] && !requested.current.has(f.name),
-    );
+    const missing = tabs.filter((f) => {
+      if (requested.current.has(`${f.name}@${f.sha}`)) return false;
+      const buf = buffers[f.name];
+      if (!buf) return true;
+      if (buf.sha === f.sha) return false;
+      // The blob changed under us — someone edited this file in the vault. Read
+      // it again, unless there is unsaved work here: throwing that away to show
+      // their version would be much worse than leaving the two to collide on
+      // the next save, which reports the conflict instead of losing anything.
+      return !buf.loading && !buf.saving && buf.text === buf.savedText;
+    });
     const closed = Object.keys(buffers).filter((n) => !open.has(n));
     if (missing.length === 0 && closed.length === 0) return;
-    for (const f of missing) requested.current.add(f.name);
+    for (const f of missing) requested.current.add(`${f.name}@${f.sha}`);
 
     setBuffers((prev) => {
       const next: Record<string, Buffer> = {};
@@ -126,7 +135,7 @@ export function CodeEditor({
       if (f.size > MAX_CODE_BYTES) continue;
       // no-store because /api/file is cached for a minute, and a stale copy
       // here would mean saving over the file with an out-of-date sha.
-      fetch(fileUrl(code, f.name, { owner }), { cache: "no-store" })
+      fetch(fileUrl(code, f.name, { owner, v: f.sha }), { cache: "no-store" })
         .then((r) => {
           if (!r.ok) throw new Error("Could not open that file");
           return r.text();
@@ -321,7 +330,11 @@ export function CodeEditor({
               browser.
             </p>
             <a
-              href={fileUrl(code, active.name, { download: true, owner })}
+              href={fileUrl(code, active.name, {
+                download: true,
+                owner,
+                v: active.sha,
+              })}
               className="btn-ghost mt-4"
             >
               <Download className="h-4 w-4" />

@@ -11,11 +11,17 @@ import { PdfViewer } from "./PdfViewer";
 export function fileUrl(
   code: string,
   name: string,
-  opts: { download?: boolean; owner?: string } = {},
+  opts: { download?: boolean; owner?: string; v?: string } = {},
 ) {
   const q = new URLSearchParams({ code, name });
   if (opts.download) q.set("download", "1");
   if (opts.owner) q.set("owner", opts.owner);
+  // `v` is the blob sha. /api/file ignores it — its only job is to put the
+  // file's identity in the URL, so the URL changes when the bytes do. Without
+  // it an edit by someone else is invisible twice over: the browser holds the
+  // response for a minute (see the Cache-Control the route sets), and the
+  // viewer below is keyed on this string, so it never even remounts to ask.
+  if (opts.v) q.set("v", opts.v);
   return `/api/file?${q}`;
 }
 
@@ -30,7 +36,7 @@ export function FileViewer({
   owner?: string;
   onClose: () => void;
 }) {
-  const src = fileUrl(code, file.name, { owner });
+  const src = fileUrl(code, file.name, { owner, v: file.sha });
 
   return (
     <div className="flex h-full flex-col">
@@ -51,7 +57,7 @@ export function FileViewer({
           <ExternalLink className="h-4 w-4" />
         </a>
         <a
-          href={fileUrl(code, file.name, { download: true, owner })}
+          href={fileUrl(code, file.name, { download: true, owner, v: file.sha })}
           className="rounded p-1.5 text-faint hover:bg-raised hover:text-ink"
           title="Download"
         >
@@ -88,7 +94,7 @@ export function FileViewer({
           <div className="flex h-full min-h-[320px] flex-col items-center justify-center px-6 text-center">
             <p className="text-sm text-muted">No preview for this file type.</p>
             <a
-              href={fileUrl(code, file.name, { download: true, owner })}
+              href={fileUrl(code, file.name, { download: true, owner, v: file.sha })}
               className="btn-ghost mt-4"
             >
               <Download className="h-4 w-4" />

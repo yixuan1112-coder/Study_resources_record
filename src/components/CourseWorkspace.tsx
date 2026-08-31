@@ -57,23 +57,26 @@ const FILTERS: { key: FileKind | "all"; label: string }[] = [
 const REFRESH_MS = 15_000;
 
 /**
- * Adopt the server's listing, but keep the blob sha of any file that is open in
- * an editor tab. Those rows are kept current by `handleSaved`; a poll that
- * started before a save landed would otherwise put the pre-save sha back and
- * make the next rename or delete fail with a 409.
+ * Adopt the server's listing, but keep the sha this page already holds for any
+ * file it saved after the request went out.
+ *
+ * A listing describes the repo as of when GitHub answered it. If one of our own
+ * saves landed in the meantime the response carries the pre-save sha, and
+ * writing that back would make the next rename or delete fail with a 409.
+ * Everything else the server says — including an edit someone else made — is
+ * newer news than what is on screen, so it wins.
  */
 function mergeFiles(
   prev: VaultFile[],
   next: VaultFile[],
-  open: string[],
+  savedAt: Record<string, number>,
+  requestedAt: number,
 ): VaultFile[] {
-  if (open.length === 0) return next;
-  const mine = new Map(prev.map((f) => [f.name, f.sha]));
-  return next.map((f) =>
-    open.includes(f.name) && mine.has(f.name)
-      ? { ...f, sha: mine.get(f.name)! }
-      : f,
-  );
+  return next.map((f) => {
+    if ((savedAt[f.name] ?? 0) <= requestedAt) return f;
+    const mine = prev.find((p) => p.name === f.name);
+    return mine ? { ...f, sha: mine.sha } : f;
+  });
 }
 
 export function CourseWorkspace({
@@ -91,7 +94,9 @@ export function CourseWorkspace({
 }) {
   const readOnly = !!owner;
   const [files, setFiles] = useState<VaultFile[]>(initialFiles);
-  const [selected, setSelected] = useState<VaultFile | null>(null);
+  /** The preview pane's file, held by name — the file itself is derived from
+   *  `files`, so a refresh that changes its sha reaches the viewer. */
+  const [selectedName, setSelectedName] = useState<string | null>(null);
   const [filter, setFilter] = useState<FileKind | "all">("all");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -119,17 +124,21 @@ export function CourseWorkspace({
   );
   const activeTab =
     tabs.find((f) => f.name === activeName) ?? tabs[tabs.length - 1] ?? null;
+  const selected = useMemo(
+    () => files.find((f) => f.name === selectedName) ?? null,
+    [files, selectedName],
+  );
 
   /** Code opens in the editor; everything else opens in the preview pane. */
   const openFile = useCallback((file: VaultFile) => {
     if (file.kind === "code") {
-      setSelected(null);
+      setSelectedName(null);
       setOpenNames((prev) =>
         prev.includes(file.name) ? prev : [...prev, file.name],
       );
       setActiveName(file.name);
     } else {
-      setSelected(file);
+      setSelectedName(file.name);
     }
   }, []);
 
@@ -145,17 +154,14 @@ export function CourseWorkspace({
     [activeName, openNames],
   );
 
+  /** When each file was last written from this page. Read by `mergeFiles`. */
+  const savedAtRef = useRef<Record<string, number>>({});
+
   /** Keep the row's sha current after a save, so rename and delete still work. */
   const handleSaved = useCallback((name: string, sha: string) => {
+    savedAtRef.current[name] = Date.now();
     setFiles((prev) => prev.map((f) => (f.name === name ? { ...f, sha } : f)));
   }, []);
-
-  // Read by `load`, which must not be rebuilt every time a tab opens or an
-  // upload ticks — the polling effect below depends on its identity.
-  const openNamesRef = useRef<string[]>([]);
-  useEffect(() => {
-    openNamesRef.current = openNames;
-  }, [openNames]);
 
   /** Skip polling while something is mid-flight or a dialog owns the screen. */
   const busyRef = useRef(false);
@@ -166,6 +172,7 @@ export function CourseWorkspace({
   const load = useCallback(
     async ({ background = false }: { background?: boolean } = {}) => {
       if (background) setSyncing(true);
+      const requestedAt = Date.now();
       try {
         const q = new URLSearchParams({ code: course.code });
         if (owner) q.set("owner", owner);
@@ -181,7 +188,7 @@ export function CourseWorkspace({
           return;
         }
         setFiles((prev) =>
-          mergeFiles(prev, body.files ?? [], openNamesRef.current),
+          mergeFiles(prev, body.files ?? [], savedAtRef.current, requestedAt),
         );
       } finally {
         if (background) setSyncing(false);
@@ -372,7 +379,7 @@ export function CourseWorkspace({
           onCreated={async (name) => {
             setCreatingFile(false);
             await load();
-            setSelected(null);
+            setSelectedName(null);
             setOpenNames((prev) =>
               prev.includes(name) ? prev : [...prev, name],
             );
@@ -389,7 +396,7 @@ export function CourseWorkspace({
           onSaved={async (msg) => {
             setComposing(null);
             setNotice(msg);
-            setSelected(null);
+            setSelectedName(null);
             await load();
           }}
         />
@@ -458,7 +465,7 @@ export function CourseWorkspace({
                 onEdit={() => setComposing({ file })}
                 onNotice={setNotice}
                 onChanged={async () => {
-                  setSelected(null);
+                  setSelectedName(null);
                   await load();
                 }}
               />
@@ -488,7 +495,7 @@ export function CourseWorkspace({
               code={course.code}
               file={selected}
               owner={owner}
-              onClose={() => setSelected(null)}
+              onClose={() => setSelectedName(null)}
             />
           ) : activeTab ? null : (
             <div className="flex h-full min-h-[420px] flex-col items-center justify-center px-6 text-center">
@@ -731,7 +738,7 @@ function FileRow({
 
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
         <a
-          href={fileUrl(code, file.name, { download: true, owner })}
+          href={fileUrl(code, file.name, { download: true, owner, v: file.sha })}
           className="rounded p-1.5 text-faint hover:bg-surface hover:text-ink"
           title="Download"
         >
@@ -812,8 +819,11 @@ function NoteComposer({
     const controller = new AbortController();
     void (async () => {
       try {
-        const res = await fetch(fileUrl(code, file.name), {
+        // Pinned to the sha and uncached: opening the editor on a minute-old
+        // copy would mean saving that copy back over the newer one.
+        const res = await fetch(fileUrl(code, file.name, { v: file.sha }), {
           signal: controller.signal,
+          cache: "no-store",
         });
         if (!res.ok) throw new Error("Could not open that note");
         const body = await res.text();
