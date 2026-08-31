@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Lock } from "lucide-react";
 import { auth } from "@/auth";
 import { AppHeader } from "@/components/AppHeader";
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { loadIndex } from "@/lib/courses";
 import { GitHubError } from "@/lib/github";
 import { isValidLogin } from "@/lib/sharing";
@@ -51,6 +52,8 @@ export default async function SharedVaultPage({
 
   return (
     <div className="min-h-screen">
+      {/* Courses appear here when the owner adds one; poll so that shows up. */}
+      <AutoRefresh />
       <AppHeader login={session.login} />
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <Link

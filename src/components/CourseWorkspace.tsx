@@ -15,6 +15,7 @@ import {
   NotebookPen,
   Paperclip,
   Pencil,
+  RefreshCw,
   Save,
   Trash2,
   Upload,
@@ -45,6 +46,36 @@ const FILTERS: { key: FileKind | "all"; label: string }[] = [
   { key: "other", label: "Other" },
 ];
 
+/**
+ * How often to re-list the course while the tab is in front.
+ *
+ * A vault is a GitHub repo other people can also be looking at, so files can
+ * appear without this browser having done anything — someone you share with
+ * uploads a lecture, or you drop a file in on your phone. Without a poll the
+ * only way to find out is a full page reload.
+ */
+const REFRESH_MS = 15_000;
+
+/**
+ * Adopt the server's listing, but keep the blob sha of any file that is open in
+ * an editor tab. Those rows are kept current by `handleSaved`; a poll that
+ * started before a save landed would otherwise put the pre-save sha back and
+ * make the next rename or delete fail with a 409.
+ */
+function mergeFiles(
+  prev: VaultFile[],
+  next: VaultFile[],
+  open: string[],
+): VaultFile[] {
+  if (open.length === 0) return next;
+  const mine = new Map(prev.map((f) => [f.name, f.sha]));
+  return next.map((f) =>
+    open.includes(f.name) && mine.has(f.name)
+      ? { ...f, sha: mine.get(f.name)! }
+      : f,
+  );
+}
+
 export function CourseWorkspace({
   course,
   initialFiles,
@@ -66,6 +97,8 @@ export function CourseWorkspace({
   const [notice, setNotice] = useState<string | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [dragging, setDragging] = useState(false);
+  /** A background re-list is in flight; drives the spinner on the button. */
+  const [syncing, setSyncing] = useState(false);
   /** null = closed. `{}` = writing a new note. `{ file }` = editing that note. */
   const [composing, setComposing] = useState<{ file?: VaultFile } | null>(null);
   const [creatingFile, setCreatingFile] = useState(false);
@@ -117,18 +150,63 @@ export function CourseWorkspace({
     setFiles((prev) => prev.map((f) => (f.name === name ? { ...f, sha } : f)));
   }, []);
 
-  const load = useCallback(async () => {
-    const q = new URLSearchParams({ code: course.code });
-    if (owner) q.set("owner", owner);
-    const res = await fetch(`/api/files?${q}`);
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(body.error ?? "Could not list this course's files");
-      setFiles([]);
-      return;
-    }
-    setFiles(body.files ?? []);
-  }, [course.code, owner]);
+  // Read by `load`, which must not be rebuilt every time a tab opens or an
+  // upload ticks — the polling effect below depends on its identity.
+  const openNamesRef = useRef<string[]>([]);
+  useEffect(() => {
+    openNamesRef.current = openNames;
+  }, [openNames]);
+
+  /** Skip polling while something is mid-flight or a dialog owns the screen. */
+  const busyRef = useRef(false);
+  useEffect(() => {
+    busyRef.current = !!progress || !!composing || creatingFile;
+  }, [progress, composing, creatingFile]);
+
+  const load = useCallback(
+    async ({ background = false }: { background?: boolean } = {}) => {
+      if (background) setSyncing(true);
+      try {
+        const q = new URLSearchParams({ code: course.code });
+        if (owner) q.set("owner", owner);
+        const res = await fetch(`/api/files?${q}`, { cache: "no-store" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          // A poll that fails is not worth interrupting the page for: a dropped
+          // request or a rate limit would otherwise blank the list and shout at
+          // someone who did nothing. Keep what is on screen and try again.
+          if (background) return;
+          setError(body.error ?? "Could not list this course's files");
+          setFiles([]);
+          return;
+        }
+        setFiles((prev) =>
+          mergeFiles(prev, body.files ?? [], openNamesRef.current),
+        );
+      } finally {
+        if (background) setSyncing(false);
+      }
+    },
+    [course.code, owner],
+  );
+
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      if (busyRef.current) return;
+      void load({ background: true });
+    };
+    const id = setInterval(tick, REFRESH_MS);
+    // Coming back to the tab should feel instant rather than wait out the
+    // interval, and a backgrounded tab should not poll GitHub at all.
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
+    };
+  }, [load]);
 
   const handleUpload = useCallback(
     async (picked: FileList | File[] | null) => {
@@ -317,7 +395,7 @@ export function CourseWorkspace({
         />
       )}
 
-      <div className="mb-4 flex flex-wrap gap-1.5">
+      <div className="mb-4 flex flex-wrap items-center gap-1.5">
         {FILTERS.map((f) => {
           const n = f.key === "all" ? counts.all : (counts[f.key] ?? 0);
           if (f.key !== "all" && n === 0) return null;
@@ -336,6 +414,18 @@ export function CourseWorkspace({
             </button>
           );
         })}
+        <button
+          onClick={() => void load({ background: true })}
+          disabled={syncing}
+          className="ml-auto rounded p-1.5 text-faint hover:bg-raised hover:text-ink"
+          title={
+            readOnly
+              ? `Check for files ${owner} has added`
+              : "Check for new files"
+          }
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+        </button>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
