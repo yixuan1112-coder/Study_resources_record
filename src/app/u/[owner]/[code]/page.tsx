@@ -61,6 +61,7 @@ export default async function SharedCoursePage({
       <CourseWorkspace
         course={course}
         initialFiles={files}
+        login={me}
         owner={owner}
         myCourses={myCourses}
       />

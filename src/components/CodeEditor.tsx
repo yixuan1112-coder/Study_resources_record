@@ -24,6 +24,7 @@ import {
   languageOf,
   type VaultFile,
 } from "@/lib/types";
+import { clearDraft, draftKey, readDraft, writeDraft } from "@/lib/drafts";
 
 type Buffer = {
   /** What is in the editor right now. */
@@ -37,10 +38,13 @@ type Buffer = {
   error?: string;
   /** Too large to hand-edit — offer the download instead. */
   oversize?: boolean;
+  /** This buffer opened onto work rescued from the draft store. */
+  recovered?: boolean;
 };
 
 export function CodeEditor({
   code,
+  login,
   tabs,
   active,
   owner,
@@ -49,6 +53,8 @@ export function CodeEditor({
   onSaved,
 }: {
   code: string;
+  /** Signed-in account. Namespaces this device's unsaved drafts. */
+  login: string;
   /** Every file open in the editor, in tab order. */
   tabs: VaultFile[];
   active: VaultFile;
@@ -81,6 +87,61 @@ export function CodeEditor({
       prev[name] ? { ...prev, [name]: { ...prev[name], ...next } } : prev,
     );
   }, []);
+
+  const draftKeyFor = useCallback(
+    (name: string) => draftKey(login, `code/${code}/${name}`),
+    [code, login],
+  );
+
+  // Every tab is mirrored, not just the visible one: a background tab left
+  // dirty is exactly the edit someone forgets about before closing the app.
+  const buffersRef = useRef(buffers);
+  useEffect(() => {
+    buffersRef.current = buffers;
+  });
+
+  const persistable = useCallback(
+    () =>
+      Object.entries(buffersRef.current).filter(
+        ([, b]) => !b.loading && !b.oversize,
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    if (readOnly) return;
+    const id = setTimeout(() => {
+      for (const [name, buf] of persistable()) {
+        const key = draftKeyFor(name);
+        if (buf.text !== buf.savedText) writeDraft(key, buf.text, buf.sha);
+        else clearDraft(key);
+      }
+    }, 600);
+    return () => clearTimeout(id);
+  }, [buffers, draftKeyFor, persistable, readOnly]);
+
+  // The debounce above is what loses the last keystrokes when an app is swiped
+  // away, so hiding forces the write through immediately. On iOS these two are
+  // the only signals that arrive at all.
+  useEffect(() => {
+    if (readOnly) return;
+    const flush = () => {
+      for (const [name, buf] of persistable()) {
+        if (buf.text !== buf.savedText) {
+          writeDraft(draftKeyFor(name), buf.text, buf.sha);
+        }
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [draftKeyFor, persistable, readOnly]);
 
   // Versions already fetched, as `name@sha`. React can run this effect again
   // before the state update lands (and does so twice in development), so the
@@ -140,14 +201,26 @@ export function CodeEditor({
           if (!r.ok) throw new Error("Could not open that file");
           return r.text();
         })
-        .then((text) =>
-          patch(f.name, { text, savedText: text, loading: false }),
-        )
+        .then((text) => {
+          // `savedText` stays the committed copy either way, so the tab is
+          // correctly marked dirty and Discard has something to fall back to.
+          const draft = readOnly ? null : readDraft(draftKeyFor(f.name));
+          if (draft && draft.text !== text) {
+            patch(f.name, {
+              text: draft.text,
+              savedText: text,
+              loading: false,
+              recovered: true,
+            });
+          } else {
+            patch(f.name, { text, savedText: text, loading: false });
+          }
+        })
         .catch((e: Error) =>
           patch(f.name, { loading: false, error: e.message }),
         );
     }
-  }, [tabs, buffers, code, owner, patch]);
+  }, [tabs, buffers, code, owner, patch, draftKeyFor, readOnly]);
 
   // Which languages the runner has installed. Null until it answers; an empty
   // set means running is switched off for this site.
@@ -214,12 +287,18 @@ export function CodeEditor({
       }
       // Compare against what was actually sent, not the live buffer — the file
       // stays dirty if it was typed in while the request was in flight.
-      patch(name, { saving: false, savedText: sent, sha: body.sha });
+      clearDraft(draftKeyFor(name));
+      patch(name, {
+        saving: false,
+        savedText: sent,
+        sha: body.sha,
+        recovered: false,
+      });
       onSaved(name, body.sha);
     } catch {
       patch(name, { saving: false, error: "Could not reach the server" });
     }
-  }, [active.name, buffers, code, onSaved, patch, readOnly]);
+  }, [active.name, buffers, code, draftKeyFor, onSaved, patch, readOnly]);
 
   // Monaco binds Ctrl/Cmd+S once, at mount, so it has to reach the current
   // save through a ref rather than a captured copy.
@@ -311,6 +390,27 @@ export function CodeEditor({
           );
         })}
       </div>
+
+      {buffer?.recovered && (
+        <div className="flex items-center gap-2 border-b border-line bg-raised px-3 py-2 text-[13px] text-muted">
+          <AlertCircle className="h-4 w-4 shrink-0 text-accent" />
+          <span className="flex-1">
+            Restored unsaved changes to {active.name}.
+          </span>
+          <button
+            onClick={() => {
+              clearDraft(draftKeyFor(active.name));
+              patch(active.name, {
+                text: buffer.savedText,
+                recovered: false,
+              });
+            }}
+            className="font-medium text-ink underline underline-offset-2"
+          >
+            Discard
+          </button>
+        </div>
+      )}
 
       {buffer?.error && (
         <div className="flex items-start gap-2 border-b border-danger/40 bg-danger/5 px-3 py-2 text-[13px] text-danger">

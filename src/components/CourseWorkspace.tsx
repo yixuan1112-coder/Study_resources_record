@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowLeft,
   Check,
   ClipboardPaste,
@@ -25,6 +26,14 @@ import { CodeEditor } from "./CodeEditor";
 import { CodePad } from "./CodePad";
 import { FileViewer, fileUrl } from "./FileViewer";
 import { MAX_FILE_BYTES, uploadFiles, type UploadProgress } from "@/lib/upload";
+import {
+  clearDraft,
+  draftKey,
+  pruneDrafts,
+  readDraft,
+  useDraftAutosave,
+  useUnloadWarning,
+} from "@/lib/drafts";
 import {
   MAX_CODE_BYTES,
   colorForCode,
@@ -82,11 +91,14 @@ function mergeFiles(
 export function CourseWorkspace({
   course,
   initialFiles,
+  login,
   owner,
   myCourses = [],
 }: {
   course: Course;
   initialFiles: VaultFile[];
+  /** Signed-in account. Namespaces this device's unsaved drafts. */
+  login: string;
   /** Set when viewing a vault someone shared — the page becomes read-only. */
   owner?: string;
   /** Destinations offered by "Save to my vault". */
@@ -153,6 +165,12 @@ export function CourseWorkspace({
     },
     [activeName, openNames],
   );
+
+  // A shared laptop can carry drafts written by whoever signed in last, and
+  // abandoned ones accumulate. Both are cleared the moment a course opens.
+  useEffect(() => {
+    pruneDrafts(login);
+  }, [login]);
 
   /** When each file was last written from this page. Read by `mergeFiles`. */
   const savedAtRef = useRef<Record<string, number>>({});
@@ -391,6 +409,7 @@ export function CourseWorkspace({
       {composing && !readOnly && (
         <NoteComposer
           code={course.code}
+          login={login}
           file={composing.file}
           onCancel={() => setComposing(null)}
           onSaved={async (msg) => {
@@ -480,6 +499,7 @@ export function CourseWorkspace({
             <div className={selected ? "hidden" : "h-full"}>
               <CodeEditor
                 code={course.code}
+                login={login}
                 tabs={tabs}
                 active={activeTab}
                 owner={owner}
@@ -795,22 +815,69 @@ function FileRow({
  */
 function NoteComposer({
   code,
+  login,
   file,
   onCancel,
   onSaved,
 }: {
   code: string;
+  login: string;
   /** Set when editing an existing note, absent when writing a new one. */
   file?: VaultFile;
   onCancel: () => void;
   onSaved: (message: string) => void;
 }) {
   const editing = !!file;
-  const [title, setTitle] = useState("");
-  const [text, setText] = useState("");
+
+  // A note being written has no filename yet, so unsent work is keyed under a
+  // placeholder until the first save gives it one.
+  const key = draftKey(login, `note/${code}/${file?.name ?? "+new"}`);
+
+  // A new note can be restored as the form opens. An existing one cannot: its
+  // committed text has to arrive first so the two can be compared, which the
+  // fetch below does. Reading here rather than in an effect avoids rendering an
+  // empty box first, and is safe because the composer only mounts on a click
+  // and so never renders on the server.
+  const [rescued] = useState(() => (editing ? null : readDraft(key)));
+
+  const [title, setTitle] = useState(rescued?.meta ?? "");
+  const [text, setText] = useState(rescued?.text ?? "");
+  /** What the vault holds — empty for a new note. The gap is the unsaved work. */
+  const [baseText, setBaseText] = useState("");
   const [loading, setLoading] = useState(editing);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recovered, setRecovered] = useState(
+    !!rescued && (!!rescued.text || !!rescued.meta),
+  );
+
+
+  const dirty =
+    !loading &&
+    !busy &&
+    (editing ? text !== baseText : !!title.trim() || !!text.trim());
+
+  useDraftAutosave({
+    key,
+    text,
+    sha: file?.sha ?? "",
+    meta: editing ? undefined : title,
+    dirty,
+  });
+  useUnloadWarning(dirty);
+
+  /** Leaving on purpose is not the accident this guards against. */
+  function cancel() {
+    clearDraft(key);
+    onCancel();
+  }
+
+  function discardDraft() {
+    clearDraft(key);
+    setText(baseText);
+    if (!editing) setTitle("");
+    setRecovered(false);
+  }
 
   useEffect(() => {
     if (!file) return;
@@ -827,7 +894,16 @@ function NoteComposer({
         });
         if (!res.ok) throw new Error("Could not open that note");
         const body = await res.text();
-        setText(body);
+        setBaseText(body);
+        // Work left behind by an earlier visit wins over the committed copy —
+        // that copy is still one keystroke away via Discard, the draft is not.
+        const draft = readDraft(key);
+        if (draft && draft.text !== body) {
+          setText(draft.text);
+          setRecovered(true);
+        } else {
+          setText(body);
+        }
         setLoading(false);
       } catch (e: unknown) {
         if (controller.signal.aborted) return;
@@ -836,7 +912,7 @@ function NoteComposer({
       }
     })();
     return () => controller.abort();
-  }, [code, file]);
+  }, [code, file, key]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -858,6 +934,8 @@ function NoteComposer({
         setError(body.error ?? "Could not save that note");
         return;
       }
+      clearDraft(key);
+      setRecovered(false);
       onSaved(
         editing ? `Updated ${file.name}.` : `Saved ${body.name} to ${code}.`,
       );
@@ -877,13 +955,27 @@ function NoteComposer({
         </h2>
         <button
           type="button"
-          onClick={onCancel}
+          onClick={cancel}
           className="ml-auto rounded p-1 text-faint hover:bg-raised hover:text-ink"
           title="Cancel"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
+
+      {recovered && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-line bg-raised px-3 py-2 text-xs text-muted">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-accent" />
+          <span>Restored what you had typed but not saved.</span>
+          <button
+            type="button"
+            onClick={discardDraft}
+            className="ml-auto shrink-0 font-medium text-ink underline underline-offset-2"
+          >
+            Discard
+          </button>
+        </div>
+      )}
 
       {!editing && (
         <input
@@ -908,7 +1000,7 @@ function NoteComposer({
         disabled={loading}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Escape") onCancel();
+          if (e.key === "Escape") cancel();
           // Ctrl/Cmd+Enter saves, so a long note never needs the mouse.
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void save(e);
         }}
@@ -929,7 +1021,7 @@ function NoteComposer({
           )}
           {editing ? "Save changes" : "Save note"}
         </button>
-        <button type="button" onClick={onCancel} className="btn-ghost">
+        <button type="button" onClick={cancel} className="btn-ghost">
           Cancel
         </button>
         <span className="ml-auto text-xs text-faint">

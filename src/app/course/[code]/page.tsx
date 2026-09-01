@@ -37,7 +37,11 @@ export default async function CoursePage({
   return (
     <div className="min-h-screen">
       <AppHeader login={session.login} />
-      <CourseWorkspace course={course} initialFiles={files} />
+      <CourseWorkspace
+        course={course}
+        initialFiles={files}
+        login={session.login}
+      />
     </div>
   );
 }
