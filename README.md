@@ -92,8 +92,15 @@ Open http://localhost:3000.
    | `AUTH_SECRET` | output of `npx auth secret` |
    | `AUTH_GITHUB_ID` | your OAuth app's client ID |
    | `AUTH_GITHUB_SECRET` | your OAuth app's client secret |
+   | `AUTH_URL` | `https://your-app.vercel.app` |
 
    `AUTH_TRUST_HOST` is *not* needed on Vercel — it detects its own host.
+
+   `AUTH_URL` is what pins sign-in to one origin, and it is also the switch that
+   turns on `src/middleware.ts`. A Vercel project answers on a separate URL for
+   every deployment; start sign-in on one of those without it and the OAuth
+   cookies are written against a host GitHub never returns to, which surfaces as
+   a bare "configuration error" rather than as a redirect mismatch.
 
 4. Deploy, then go back to your GitHub OAuth App and update the two URLs to your
    real domain:

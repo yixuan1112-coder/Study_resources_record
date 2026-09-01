@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Offline · NTU Course Vault</title>
+    <!-- Deliberately self-contained: this page has to render when the network
+         is gone, so it cannot reference a stylesheet or a JS chunk. -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --canvas: #f7f7f8;
+        --surface: #ffffff;
+        --line: #e3e3e7;
+        --ink: #16161a;
+        --muted: #5c5c66;
+        --accent: #c8102e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --canvas: #0d0d10;
+          --surface: #151519;
+          --line: #2b2b33;
+          --ink: #ececf1;
+          --muted: #a0a0ad;
+          --accent: #ff5470;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: calc(env(safe-area-inset-top) + 24px) 24px
+                 calc(env(safe-area-inset-bottom) + 24px);
+        background: var(--canvas);
+        color: var(--ink);
+        font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+              "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 26rem; width: 100%; }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--accent);
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--accent);
+      }
+      h1 {
+        margin: 10px 0 0;
+        font-size: 26px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      p { margin: 14px 0 0; color: var(--muted); }
+      button {
+        margin-top: 24px;
+        width: 100%;
+        padding: 11px 14px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      button:active { opacity: 0.85; }
+      .note {
+        margin-top: 20px;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        font-size: 13px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="badge"><span class="dot"></span>NTU Course Vault</span>
+      <h1>You are offline.</h1>
+      <p>
+        Your files live in your GitHub repo, so the vault needs a connection to
+        read them. The app itself is already installed &mdash; nothing was lost.
+      </p>
+      <button type="button" onclick="location.reload()">Try again</button>
+      <p class="note">
+        If you are on campus Wi-Fi, reconnecting to <em>NTUSECURE</em> and
+        reopening the app is usually enough.
+      </p>
+    </main>
+    <script>
+      // The moment connectivity returns, go straight back to whatever the user
+      // was trying to reach instead of making them tap.
+      addEventListener("online", function () {
+        location.reload();
+      });
+    </script>
+  </body>
+</html>

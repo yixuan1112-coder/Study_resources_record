@@ -11,7 +11,7 @@ export function AppHeader({
   pendingInvites?: number;
 }) {
   return (
-    <header className="sticky top-0 z-20 border-b border-line bg-surface/85 backdrop-blur">
+    <header className="app-header sticky top-0 z-20 border-b border-line bg-surface/85 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6">
         <Link href="/dashboard" className="flex items-center gap-2 font-semibold">
           <span className="inline-block h-2 w-2 rounded-full bg-accent" />

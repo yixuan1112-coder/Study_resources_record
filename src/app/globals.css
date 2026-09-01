@@ -39,6 +39,49 @@ body {
 body {
   background: var(--canvas);
   color: var(--ink);
+  /* Only ever non-zero on a notched device held sideways. */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  /* iOS inflates text in landscape otherwise, which reflows the file lists. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/*
+ * Launched from the home screen the page owns the whole display, including the
+ * strip behind the status bar and the home indicator — that is what
+ * `viewport-fit: cover` in the layout's viewport export buys. These rules hand
+ * that strip back to the system so nothing important renders underneath it.
+ */
+@media (display-mode: standalone) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+    /* No browser chrome to pull down, so rubber-banding only ever looks
+       like the app has come loose from the screen. */
+    overscroll-behavior-y: none;
+  }
+
+  /* Tailwind's 100vh does not know about the inset the body now reserves.
+     Declared after `@tailwind utilities`, so this wins on source order. */
+  .min-h-screen {
+    min-height: calc(100dvh - env(safe-area-inset-bottom));
+  }
+
+  /* A tap that flashes grey reads as a web page, not an app. */
+  a,
+  button,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/*
+ * The sticky header sits at the very top, so under `viewport-fit: cover` its
+ * translucent bar would slide beneath the clock and battery. Padding rather
+ * than an offset, so the blurred background still fills the strip.
+ */
+.app-header {
+  padding-top: env(safe-area-inset-top);
 }
 
 @layer components {
